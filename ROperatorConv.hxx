@@ -6,6 +6,8 @@
 
 #include <TMVA/RTensor.hxx>
 
+#include "Blas.hxx"
+
 namespace TMVA {
 namespace Experimental {
 namespace SOFIE {
@@ -199,29 +201,50 @@ void ROperatorConv<T>::Forward_blas(const RTensor<T> &X,
       std::size_t outputWidth = (width + padsWidthBegin + padsWidthEnd - kernelWidth
              + stridesWidth) / stridesWidth;
       RTensor<T> XCol({channels * kernelHeight * kernelWidth, batchSize * outputHeight * outputWidth},
-                      {batchSize * outputHeight * outputWidth, 1},
-                      MemoryLayout::RowMajor);
+                      {1, channels * kernelHeight * kernelWidth},
+                      MemoryLayout::ColumnMajor);
       // Unroll the input tensor
       Im2Col(XPadding, XCol, kernelHeight, kernelWidth, stridesHeight,
              stridesWidth);
-      // Convolution kernels,  kernelHeight x KernelWidth x Channel , kernels
-      RTensor<T> F({channels * kernelHeight * kernelWidth, kernels}, {kernels, 1});
-      // Vectorize the convolution kernels into a matrix
+      // Convolution kernels,  kernels x channels x kernelHeight x KernelWidth
+      RTensor<T> F({kernels, channels * kernelHeight * kernelWidth},
+                   {1, kernels},
+                   MemoryLayout::ColumnMajor);
+      // Vectorize the (dilated)convolution kernels into a matrix
       for (std::size_t k = 0; k < kernels; k++) {
          for (std::size_t c = 0; c < channels; c++) {
             for (std::size_t h = 0; h < kHeight; h++) {
                for (std::size_t w = 0; w < kWidth; w++) {
-                  F(c * kernelHeight * kernelWidth + h * dilationsHeight * kernelWidth
-                    + w * dilationsWidth, k) = W(k, c, h, w);
+                  F(k, c * kernelHeight * kernelWidth + h * dilationsHeight * kernelWidth 
+                   + w * dilationsWidth) = W(k, c, h, w);
                }
             }
          }
       }
+      // Compute the output, vec(Y) = vec(F * XCol) of size
+      // kernels x batchSize x outputHeight x outputWidth
+      char transa = 'N';
+      char transb = 'N';
+      int m = F.GetShape()[0];
+      int n = XCol.GetShape()[1];
+      int k = F.GetShape()[1];
+      T alpha = 1.0;
+      T beta = 0.0;
+      int lda = m;
+      int ldb = k;
 
-      // Compute the output, YMat = tXCol * F
-      RTensor<T> YMat({batchSize * outputHeight * outputWidth, kernels},
-                      {kernels, 1}, MemoryLayout::RowMajor);
-
+      Blas::Gemm<T>(&transa, &transb, &m, &n, &k, &alpha, F.GetData(),
+                    &lda, XCol.GetData(), &ldb, &beta, Y.GetData(), &m);
+      // Add bias
+      for(std::size_t k=0; k < kernels; k++) {
+         for(std::size_t n=0; n < batchSize; n++) {
+            for(std::size_t h=0;h < outputHeight; h++) {
+               for(std::size_t w=0; w < outputWidth; w++) {
+                  Y(k, n, h, w) += B(k);
+               }
+            }
+         }
+      }
    } else {
       std::stringstream ss;
       ss << "TMVA::SOFIE - Convolution not implemented for input size =";
