@@ -176,20 +176,20 @@ void ROperatorConv<T>::Forward_blas(const RTensor<T> &X,
          stridesWidth = fStrides[1];
       }
 
-      RTensor<T> XPadding(
+      RTensor<T> XPad(
           {batchSize, channels, height + padsHeightBegin + padsHeightEnd,
            width + padsWidthBegin + padsWidthEnd},
           {channels * (height + padsHeightBegin + padsHeightEnd) *
                (width + padsWidthBegin + padsWidthEnd),
            (height + padsHeightBegin + padsHeightEnd) *
                (width + padsWidthBegin + padsWidthEnd),
-           width + padsHeightBegin + padsWidthEnd, 1});
+           width + padsWidthBegin + padsWidthEnd, 1});
       // Padding the input with zeros
       for (std::size_t n = 0; n < batchSize; n++) {
          for (std::size_t c = 0; c < channels; c++) {
             for (std::size_t h = 0; h < height; h++) {
                for (std::size_t w = 0; w < width; w++) {
-                  XPadding(n, c, h + padsHeightBegin, w + padsWidthBegin) =
+                  XPad(n, c, h + padsHeightBegin, w + padsWidthBegin) =
                       X(n, c, h, w);
                }
             }
@@ -204,7 +204,7 @@ void ROperatorConv<T>::Forward_blas(const RTensor<T> &X,
                       {1, channels * kernelHeight * kernelWidth},
                       MemoryLayout::ColumnMajor);
       // Unroll the input tensor
-      Im2Col(XPadding, XCol, kernelHeight, kernelWidth, stridesHeight,
+      Im2Col(XPad, XCol, kernelHeight, kernelWidth, stridesHeight,
              stridesWidth);
       // Convolution kernels,  kernels x channels x kernelHeight x KernelWidth
       RTensor<T> F({kernels, channels * kernelHeight * kernelWidth},
