@@ -214,56 +214,70 @@ void ROperatorConv<T>::Forward_blas(const RTensor<T> &X,
             }
          }
       }
+      if (group == 1) {
+         // Compute the output, vec(Y) = vec(F * XCol) of size
+         // kernels x batchSize x outputHeight x outputWidth
+         char transF    = 'N';
+         char transXCol = 'N';
 
-      // Compute the output, vec(Y) = vec(F * XCol) of size
-      // kernels x batchSize x outputHeight x outputWidth
-      std::size_t FgHeight = F.GetShape()[0] / group;
-      std::size_t FgWidth  = F.GetShape()[1];
-      T *Fg = new T[FgHeight * FgWidth];
+         int m = F.GetShape()[0];
+         int n = XCol.GetShape()[1];
+         int k = F.GetShape()[1];
 
-      std::size_t XgHeight = XCol.GetShape()[0] / group;
-      std::size_t XgWidth  = XCol.GetShape()[1];
-      T *Xg = new T[XgHeight * XgWidth];
+         T alpha = 1.0;
+         T beta  = 0.0;
 
-      T *Yg = new T[FgHeight * XgWidth];
-      T *data = Y.GetData();
+         Blas::Gemm<T>(&transF, &transXCol, &m, &n, &k, &alpha, F.GetData(), &m,
+                       XCol.GetData(), &k, &beta, Y.GetData(), &m);
+      } else {
+         // Compute the output, Y = concatenate(Yg) where vec(Yg) = vec(Fg * Xg)
+         std::size_t FgHeight = F.GetShape()[0] / group;
+         std::size_t FgWidth  = F.GetShape()[1];
+         T *Fg = new T[FgHeight * FgWidth];
 
-      char transF  = 'N';
-      char transXg = 'N';
+         std::size_t XgHeight = XCol.GetShape()[0] / group;
+         std::size_t XgWidth  = XCol.GetShape()[1];
+         T *Xg = new T[XgHeight * XgWidth];
 
-      int m = FgHeight;
-      int n = XgWidth;
-      int k = FgWidth;
+         T *Yg = new T[FgHeight * XgWidth];
+         T *data = Y.GetData();
 
-      T alpha = 1.0;
-      T beta  = 0.0;
+         char transF  = 'N';
+         char transXg = 'N';
 
-      for (std::size_t g = 0; g < group; g++) {
-         // Copy F(g * FgHeight:(g + 1) * FgHeight, 0:FgWidth) to Fg
-         for (std::size_t h = 0; h < FgHeight; h++) {
-            for (std::size_t w = 0; w < FgWidth; w++) {
-               Fg[h + w * FgHeight] = F(h + g * FgHeight, w);
+         int m = FgHeight;
+         int n = XgWidth;
+         int k = FgWidth;
+
+         T alpha = 1.0;
+         T beta  = 0.0;
+
+         for (std::size_t g = 0; g < group; g++) {
+            // Copy F(g * FgHeight:(g + 1) * FgHeight, 0:FgWidth) to Fg
+            for (std::size_t h = 0; h < FgHeight; h++) {
+               for (std::size_t w = 0; w < FgWidth; w++) {
+                  Fg[h + w * FgHeight] = F(h + g * FgHeight, w);
+               }
             }
-         }
-         // Copy XCol(g * XgHeight:(g + 1) * XgHeight, 0:XgWidth) to Xg
-         for (std::size_t h = 0; h < XgHeight; h++) {
-            for (std::size_t w = 0; w < XgWidth; w++) {
-               Xg[h + w * XgHeight] = XCol(h + g * XgHeight, w);
+            // Copy XCol(g * XgHeight:(g + 1) * XgHeight, 0:XgWidth) to Xg
+            for (std::size_t h = 0; h < XgHeight; h++) {
+               for (std::size_t w = 0; w < XgWidth; w++) {
+                  Xg[h + w * XgHeight] = XCol(h + g * XgHeight, w);
+               }
             }
-         }
-         // Compute Yg = Fg * Xg
-         Blas::Gemm<T>(&transF, &transXg, &m, &n, &k, &alpha, Fg, &m, Xg, &k,
+            // Compute Yg = Fg * Xg
+            Blas::Gemm<T>(&transF, &transXg, &m, &n, &k, &alpha, Fg, &m, Xg, &k,
                        &beta, Yg, &m);
-         // Copy Yg to Y(g * FgHeight * XgWidth:(g + 1) * FgHeight * XgWidth)
-         for (std::size_t i = 0; i < FgHeight * XgWidth; i++) {
-            data[i + g * FgHeight * XgWidth] = Yg[i];
+            // Copy Yg to Y(g * FgHeight * XgWidth:(g + 1) * FgHeight * XgWidth)
+            for (std::size_t i = 0; i < FgHeight * XgWidth; i++) {
+               data[i + g * FgHeight * XgWidth] = Yg[i];
+            }
          }
+
+         delete[] Fg;
+         delete[] Xg;
+         delete[] Yg;
       }
-
-      delete[] Fg;
-      delete[] Xg;
-      delete[] Yg;
-
       // Add bias
       for (std::size_t k = 0; k < kernels; k++) {
          for (std::size_t n = 0; n < batchSize; n++) {
