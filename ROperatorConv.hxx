@@ -30,7 +30,7 @@ protected:
                const std::size_t &stridesHeight,
                const std::size_t &stridesWidth);
 
- public:
+public:
    /** Constructors. */
    ROperatorConv(const std::string &autopad,
                  const std::vector<std::size_t> &dilations,
@@ -116,39 +116,39 @@ void ROperatorConv<T>::Forward_blas(const RTensor<T> &X,
       std::size_t dilationsWidth  = 1;
       if (!fDilations.empty()) {
          dilationsHeight = fDilations[0];
-         dilationsWidth = fDilations[1];
+         dilationsWidth  = fDilations[1];
       }
       // kernels shape
       std::size_t kernelHeight =
           kHeight + (dilationsHeight - 1) * (kHeight - 1);
       std::size_t kernelWidth = kWidth + (dilationsWidth - 1) * (kWidth - 1);
       // Padding
-      std::size_t padsHeightBegin;
-      std::size_t padsHeightEnd;
-      std::size_t padsWidthBegin;
-      std::size_t padsWidthEnd;
+      std::size_t padsTop;
+      std::size_t padsLeft;
+      std::size_t padsBottom;
+      std::size_t padsRight;
       if (fAutopad == "NOTSET") { // Explicit padding
          if (fPads.empty()) {
-            padsHeightBegin = 1;
-            padsHeightEnd   = 1;
-            padsWidthBegin  = 1;
-            padsWidthEnd    = 1;
+            padsTop    = 1;
+            padsLeft   = 1;
+            padsBottom = 1;
+            padsRight  = 1;
          } else { // Stride along each spatial axis
-            padsHeightBegin = fPads[0];
-            padsHeightEnd   = fPads[2];
-            padsWidthBegin  = fPads[1];
-            padsWidthEnd    = fPads[3];
+            padsTop    = fPads[0];
+            padsLeft   = fPads[1];
+            padsBottom = fPads[2];
+            padsRight  = fPads[3];
          }
       } else if (fAutopad == "SAME_UPPER" || fAutopad == "SAME_LOWER") {
-         padsHeightBegin = (kernelHeight - 1) / 2;
-         padsHeightEnd   = kernelHeight / 2;
-         padsWidthBegin  = (kernelWidth - 1) / 2;
-         padsWidthEnd    = kernelWidth / 2;
+         padsTop  = (kernelHeight - 1) / 2;
+         padsLeft = (kernelWidth - 1) / 2;
+         padsBottom = kernelHeight / 2;
+         padsRight  = kernelWidth / 2;
          if (kernelHeight % 2 == 1) {
-            (fAutopad == "SAME_UPPER") ? padsHeightEnd++ : padsHeightBegin++;
+            (fAutopad == "SAME_UPPER") ? padsBottom++ : padsTop++;
          }
          if (kernelWidth % 2 == 1) {
-            (fAutopad == "SAME_UPPER") ? padsWidthEnd++ : padsWidthBegin++;
+            (fAutopad == "SAME_UPPER") ? padsRight++ : padsLeft++;
          }
       } else if (fAutopad != "VALID") {
          std::stringstream ss;
@@ -164,31 +164,29 @@ void ROperatorConv<T>::Forward_blas(const RTensor<T> &X,
          stridesWidth  = fStrides[1];
       }
 
-      RTensor<T> XPad({batchSize, channels,
-                       height + padsHeightBegin + padsHeightEnd,
-                       width + padsWidthBegin + padsWidthEnd},
-                      {channels * (height + padsHeightBegin + padsHeightEnd) *
-                           (width + padsWidthBegin + padsWidthEnd),
-                       (height + padsHeightBegin + padsHeightEnd) *
-                           (width + padsWidthBegin + padsWidthEnd),
-                       width + padsWidthBegin + padsWidthEnd, 1});
+      RTensor<T> XPad(
+          {batchSize, channels, height + padsTop + padsBottom,
+            width + padsLeft + padsRight},
+          {channels * (height + padsTop + padsBottom) * (width +
+            padsLeft + padsRight),
+           (height + padsTop + padsBottom) * (width + padsLeft +
+            padsRight), width + padsLeft + padsRight, 1});
       // Padding the input with zeros
       for (std::size_t n = 0; n < batchSize; n++) {
          for (std::size_t c = 0; c < channels; c++) {
             for (std::size_t h = 0; h < height; h++) {
                for (std::size_t w = 0; w < width; w++) {
-                  XPad(n, c, h + padsHeightBegin, w + padsWidthBegin) =
-                      X(n, c, h, w);
+                  XPad(n, c, h + padsTop, w + padsLeft) = X(n, c, h, w);
                }
             }
          }
       }
       // Output shape
-      std::size_t outputHeight = (height + padsHeightBegin + padsHeightEnd -
-                                  kernelHeight + stridesHeight) /
-                                 stridesHeight;
+      std::size_t outputHeight =
+          (height + padsTop + padsBottom - kernelHeight + stridesHeight) /
+          stridesHeight;
       std::size_t outputWidth =
-          (width + padsWidthBegin + padsWidthEnd - kernelWidth + stridesWidth) /
+          (width + padsLeft + padsRight - kernelWidth + stridesWidth) /
           stridesWidth;
 
       RTensor<T> XCol({channels * kernelHeight * kernelWidth,
@@ -267,7 +265,7 @@ void ROperatorConv<T>::Forward_blas(const RTensor<T> &X,
             }
             // Compute Yg = Fg * Xg
             Blas::Gemm<T>(&transF, &transXg, &m, &n, &k, &alpha, Fg, &m, Xg, &k,
-                       &beta, Yg, &m);
+                          &beta, Yg, &m);
             // Copy Yg to Y(g * FgHeight * XgWidth:(g + 1) * FgHeight * XgWidth)
             for (std::size_t i = 0; i < FgHeight * XgWidth; i++) {
                data[i + g * FgHeight * XgWidth] = Yg[i];
