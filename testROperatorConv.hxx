@@ -25,6 +25,9 @@ template<typename T>
 bool testROperatorConvBatch(double tol);
 
 template<typename T>
+bool testROperatorConvGrouped(double tol);
+
+template<typename T>
 bool testROperatorConv(double tol) {
    bool failed = false;
 
@@ -34,6 +37,7 @@ bool testROperatorConv(double tol) {
    failed |= testROperatorConvStridesNoPadding<T>(tol);
    failed |= testROperatorConvStridesPaddingAlongOneDimension<T>(tol);
    failed |= testROperatorConvBatch<T>(tol);
+   failed |= testROperatorConvGrouped<T>(tol);
 
    return failed;
 }
@@ -274,6 +278,42 @@ bool testROperatorConvBatch(double tol) {
    std::stringstream ss;
    ss << "   ";
    ss << "Convolution with padding and batched input: Test ";
+   ss << (failed? "Failed" : "Passed" );
+   std::cout << ss.str() << std::endl;
+   return failed;
+}
+
+template<typename T>
+bool testROperatorConvGrouped(double tol) {
+   using TMVA::Experimental::RTensor;
+   using TMVA::Experimental::SOFIE::ROperatorConv;
+   // Input
+   RTensor<T> X({1, 4, 2, 2}, {16, 4, 2, 1});
+   std::iota(X.begin(), X.end(), 0.0);
+   // Kernel
+   RTensor<T> W({4, 2, 2, 2}, {8, 4, 2, 1});
+   std::iota(W.begin(), W.end(), 0.0);
+   // Bias
+   RTensor<T> B({4});
+   std::iota(B.begin(), B.end(), 0.0);
+   // Output
+   RTensor<T> Y({4, 1, 1, 1}, {1, 1, 1, 1});
+   // True Output
+   T data[4] = {140., 365., 1838., 2575.};
+   RTensor<T> TrueY(data, {4, 1, 1, 1}, {1, 1, 1, 1});
+
+   ROperatorConv<T> conv("NOTSET",     // autopad
+                         {},           // dilations
+                         2,            // group
+                         {2, 2},       // kernel shape
+                         {0, 0, 0, 0}, // pads
+                         {});          // strides, default {1, 1}
+   conv.Forward_blas(X, W, B, Y);
+
+   bool failed = !IsApprox(Y, TrueY, tol);
+   std::stringstream ss;
+   ss << "   ";
+   ss << "Grouped Convolution: Test ";
    ss << (failed? "Failed" : "Passed" );
    std::cout << ss.str() << std::endl;
    return failed;
