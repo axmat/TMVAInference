@@ -276,16 +276,25 @@ void ROperatorConv<T>::Forward_blas(const RTensor<T> &X,
          delete[] Xg;
          delete[] Yg;
       }
-      // Add bias
-      for (std::size_t k = 0; k < kernels; k++) {
-         for (std::size_t n = 0; n < batchSize; n++) {
-            for (std::size_t h = 0; h < outputHeight; h++) {
-               for (std::size_t w = 0; w < outputWidth; w++) {
-                  Y(k, n, h, w) += B(k);
-               }
-            }
+
+      std::size_t outputSize = kernels * batchSize * outputHeight * outputWidth;
+      T* Bias = new T[outputSize];
+      for(std::size_t k = 0; k < kernels; k++) {
+         std::size_t i = k * batchSize * outputHeight * outputWidth;
+         std::size_t j = (k + 1) * batchSize * outputHeight * outputWidth;
+         for(std::size_t idx = i; idx < j; idx++) {
+            Bias[idx] = B(k);
          }
       }
+
+      int n = outputSize;
+      float alpha = 1.0;
+      int incx = 1;
+      int incy = 1;
+
+      BLAS::saxpy_(&n, &alpha, Bias, &incx, Y.GetData(), &incy);
+
+      delete[] Bias;
    } else {
       std::stringstream ss;
       ss << "TMVA::SOFIE - Convolution not implemented for input size = ";

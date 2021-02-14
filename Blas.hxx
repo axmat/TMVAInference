@@ -12,6 +12,9 @@ extern "C" void sgemm_(const char *transa, const char *transb, const int *m,
                        const int *ldb, const float *beta, float *C,
                        const int *ldc);
 
+extern "C" void saxpy_(const int *n, const float* alpha, const float* x,
+                       const int *incx, float* y, const int* incy);
+
 }
 }
 }
