@@ -23,18 +23,18 @@ protected:
    /* Stack tensors column by column. */
    void Im2Col(const RTensor<T> &X,
                      RTensor<T> &XCol,
-               const std::size_t &group,
-               const std::size_t &depth,
-               const std::size_t &kernelHeight,
-               const std::size_t &kernelWidth,
-               const std::size_t &stridesHeight,
-               const std::size_t &stridesWidth);
+               std::size_t group,
+               std::size_t depth,
+               std::size_t kernelHeight,
+               std::size_t kernelWidth,
+               std::size_t stridesHeight,
+               std::size_t stridesWidth);
 
 public:
    /** Constructors. */
    ROperatorConv(const std::string &autopad,
                  const std::vector<std::size_t> &dilations,
-                 const std::size_t &group,
+                 std::size_t group,
                  const std::vector<std::size_t> &kernelShape,
                  const std::vector<std::size_t> &pads,
                  const std::vector<std::size_t> &strides)
@@ -57,12 +57,12 @@ public:
 template <typename T>
 void ROperatorConv<T>::Im2Col(const RTensor<T> &X,
                                     RTensor<T> &XCol,
-                              const std::size_t &group,
-                              const std::size_t &depth,
-                              const std::size_t &kernelHeight,
-                              const std::size_t &kernelWidth,
-                              const std::size_t &stridesHeight,
-                              const std::size_t &stridesWidth) {
+                              std::size_t group,
+                              std::size_t depth,
+                              std::size_t kernelHeight,
+                              std::size_t kernelWidth,
+                              std::size_t stridesHeight,
+                              std::size_t stridesWidth) {
    std::size_t batchSize = X.GetShape()[0];
    std::size_t height    = X.GetShape()[2];
    std::size_t width     = X.GetShape()[3];
@@ -225,7 +225,7 @@ void ROperatorConv<T>::Forward_blas(const RTensor<T> &X,
          T alpha = 1.0;
          T beta  = 0.0;
 
-         Blas::Gemm<T>(&transF, &transXCol, &m, &n, &k, &alpha, F.GetData(), &m,
+         BLAS::sgemm_(&transF, &transXCol, &m, &n, &k, &alpha, F.GetData(), &m,
                        XCol.GetData(), &k, &beta, Y.GetData(), &m);
       } else {
          // Compute the output, Y = concatenate(Yg) where vec(Yg) = vec(Fg * Xg)
@@ -264,7 +264,7 @@ void ROperatorConv<T>::Forward_blas(const RTensor<T> &X,
                }
             }
             // Compute Yg = Fg * Xg
-            Blas::Gemm<T>(&transF, &transXg, &m, &n, &k, &alpha, Fg, &m, Xg, &k,
+            BLAS::sgemm_(&transF, &transXg, &m, &n, &k, &alpha, Fg, &m, Xg, &k,
                           &beta, Yg, &m);
             // Copy Yg to Y(g * FgHeight * XgWidth:(g + 1) * FgHeight * XgWidth)
             for (std::size_t i = 0; i < FgHeight * XgWidth; i++) {

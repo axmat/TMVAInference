@@ -1,12 +1,12 @@
 CXX = clang++
 CPPFLAGS = -std=c++11
 ROOTFLAGS = `root-config --cflags`
-BLASDIR = /usr/local/opt/openblas
-BLASFLAG = -L${BLASDIR} -lblas
+BLASDIR = /usr/include/openblas
+BLASFLAGS = -L${BLASDIR} -lopenblas
 SRC = ${wildcard *.cxx}
 
 test: ${SRC:%.cxx=%.o}
-	${CXX} -o test $^ $(BLASFLAG) $(ROOTFLAGS) ${CPPFLAGS}
+	${CXX} -o test $^ $(BLASFLAGS) $(ROOTFLAGS) ${CPPFLAGS}
 
 %.o: %.cxx
 	${CXX} ${CPPFLAGS} $(ROOTFLAGS) -c $< 
