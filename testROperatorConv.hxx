@@ -1,6 +1,7 @@
 #ifndef TEST_OPERATOR_CONV
 #define TEST_OPERATOR_CONV
 
+#include "TMVA/RTensor.hxx"
 #include "testROperator.hxx"
 #include "ROperatorConv.hxx"
 
@@ -44,25 +45,25 @@ bool testROperatorConv(double tol) {
 
 template<typename T>
 bool testROperatorConvWithPadding(double tol) {
-   using TMVA::Experimental::RTensor;
+   using namespace TMVA::Experimental;
    using TMVA::Experimental::SOFIE::ROperatorConv;
    // Input
-   RTensor<T> X({1, 1, 5, 5}, {25, 25, 5, 1});
+   RTensor<T> X({1, 1, 5, 5});
    std::iota(X.begin(), X.end(), 0.);
    // Kernel
-   RTensor<T> W({1, 1, 3, 3}, {9, 9, 3, 1});
+   RTensor<T> W({1, 1, 3, 3});
    std::fill(W.begin(), W.end(), 1.0);
    // Bias
    RTensor<T> B({1});
    // Output
-   RTensor<T> Y({1, 1, 5, 5}, {25, 25, 5, 1});
+   RTensor<T> Y({1, 1, 5, 5});
    // True Output
    T data[25] = {12.,  21.,  27.,  33.,  24.,
                  33.,  54.,  63.,  72.,  51.,
                  63.,  99., 108., 117.,  81.,
                  93., 144., 153., 162., 111.,
                  72., 111., 117., 123.,  84.};
-   RTensor<T> TrueY(data, {1, 1, 5, 5}, {25, 25, 5, 1});
+   RTensor<T> TrueY(data, {1, 1, 5, 5});
 
    ROperatorConv<T> conv("NOTSET",     // Autopad
                          {},           // dilations, default {}
@@ -83,23 +84,23 @@ bool testROperatorConvWithPadding(double tol) {
 
 template<typename T>
 bool testROperatorConvWithoutPadding(double tol) {
-   using TMVA::Experimental::RTensor;
+   using namespace TMVA::Experimental;
    using TMVA::Experimental::SOFIE::ROperatorConv;
    // Input
-   RTensor<T> X({1, 1, 5, 5}, {25, 25, 5, 1});
+   RTensor<T> X({1, 1, 5, 5});
    std::iota(X.begin(), X.end(), 0.);
    // Kernel
-   RTensor<T> W({1, 1, 3, 3}, {9, 9, 3, 1});
+   RTensor<T> W({1, 1, 3, 3});
    std::fill(W.begin(), W.end(), 1.0);
    // Bias
    RTensor<T> B({1});
    // Output
-   RTensor<T> Y({1, 1, 3, 3}, {9, 9, 3, 1});
+   RTensor<T> Y({1, 1, 3, 3});
    // True Output
    T data[9] = {54.,   63.,  72.,
                 99.,  108., 117.,
                 144., 153., 162.};
-   RTensor<T> TrueY(data, {1, 1, 3, 3}, {9, 9, 3, 1});
+   RTensor<T> TrueY(data, {1, 1, 3, 3});
 
    ROperatorConv<T> conv("NOTSET",     // autopad
                          {},           // dilations, default {1, 1}
@@ -120,24 +121,24 @@ bool testROperatorConvWithoutPadding(double tol) {
 
 template<typename T>
 bool testROperatorConvStridesPadding(double tol) {
-   using TMVA::Experimental::RTensor;
+   using namespace TMVA::Experimental;
    using TMVA::Experimental::SOFIE::ROperatorConv;
    // Input
-   RTensor<T> X({1, 1, 7, 5}, {35, 35, 5, 1});
+   RTensor<T> X({1, 1, 7, 5});
    std::iota(X.begin(), X.end(), 0.);
    // Kernel
-   RTensor<T> W({1, 1, 3, 3}, {9, 9, 3, 1});
+   RTensor<T> W({1, 1, 3, 3});
    std::fill(W.begin(), W.end(), 1.0);
    // Bias
    RTensor<T> B({1});
    // Output
-   RTensor<T> Y({1, 1, 4, 3}, {12, 12, 3, 1});
+   RTensor<T> Y({1, 1, 4, 3});
    // True Output
    T data[12] = {12.,   27.,  24.,
                  63.,  108.,  81.,
                  123., 198., 141.,
                  112., 177., 124.};
-   RTensor<T> TrueY(data, {1, 1, 4, 3}, {12, 12, 3, 1});
+   RTensor<T> TrueY(data, {1, 1, 4, 3});
 
    ROperatorConv<T> conv("NOTSET",     // autopad
                          {},           // dilations, default {1, 1}
@@ -158,23 +159,23 @@ bool testROperatorConvStridesPadding(double tol) {
 
 template<typename T>
 bool testROperatorConvStridesNoPadding(double tol){
-   using TMVA::Experimental::RTensor;
+   using namespace TMVA::Experimental;
    using TMVA::Experimental::SOFIE::ROperatorConv;
    // Input
-   RTensor<T> X({1, 1, 7, 5}, {35, 35, 5, 1});
+   RTensor<T> X({1, 1, 7, 5});
    std::iota(X.begin(), X.end(), 0.);
    // Kernel
-   RTensor<T> W({1, 1, 3, 3}, {9, 9, 3, 1});
+   RTensor<T> W({1, 1, 3, 3});
    std::fill(W.begin(), W.end(), 1.0);
    // Bias
    RTensor<T> B({1});
    // Output
-   RTensor<T> Y({1, 1, 3, 2}, {6, 6, 3, 1});
+   RTensor<T> Y({1, 1, 3, 2});
    // True Output
    T data[6] = {54.,   72.,
                 144., 162.,
                 234., 252.};
-   RTensor<T> TrueY(data, {1, 1, 3, 2}, {6, 6, 3, 1});
+   RTensor<T> TrueY(data, {1, 1, 3, 2});
 
    ROperatorConv<T> conv("NOTSET",     // autopad
                          {},           // dilations, default {1, 1}
@@ -195,24 +196,24 @@ bool testROperatorConvStridesNoPadding(double tol){
 
 template<typename T>
 bool testROperatorConvStridesPaddingAlongOneDimension(double tol){
-   using TMVA::Experimental::RTensor;
+   using namespace TMVA::Experimental;
    using TMVA::Experimental::SOFIE::ROperatorConv;
    // Input
-   RTensor<T> X({1, 1, 7, 5}, {35, 35, 5, 1});
+   RTensor<T> X({1, 1, 7, 5});
    std::iota(X.begin(), X.end(), 0.);
    // Kernel
-   RTensor<T> W({1, 1, 3, 3}, {9, 9, 3, 1});
+   RTensor<T> W({1, 1, 3, 3});
    std::fill(W.begin(), W.end(), 1.0);
    // Bias
    RTensor<T> B({1});
    // Output
-   RTensor<T> Y({1, 1, 4, 2}, {8, 8, 2, 1});
+   RTensor<T> Y({1, 1, 4, 2});
    // True Output
    T data[8] = {21.,   33.,
                 99.,  117.,
                 189., 207.,
                 171., 183.};
-   RTensor<T> TrueY(data, {1, 1, 4, 2}, {8, 8, 2, 1});
+   RTensor<T> TrueY(data, {1, 1, 4, 2});
 
    ROperatorConv<T> conv("NOTSET",     // autopad
                          {},           // dilations, default {1, 1}
@@ -233,10 +234,10 @@ bool testROperatorConvStridesPaddingAlongOneDimension(double tol){
 
 template<typename T>
 bool testROperatorConvBatch(double tol) {
-   using TMVA::Experimental::RTensor;
+   using namespace TMVA::Experimental;
    using TMVA::Experimental::SOFIE::ROperatorConv;
    // Input
-   RTensor<T> X({2, 1, 5, 5}, {25, 25, 5, 1});
+   RTensor<T> X({2, 1, 5, 5});
    for(std::size_t n=0; n < 2; n++) {
       T val = 0.0;
       for(std::size_t h=0; h < 5; h++) {
@@ -247,12 +248,12 @@ bool testROperatorConvBatch(double tol) {
       }
    }
    // Kernel
-   RTensor<T> W({1, 1, 3, 3}, {9, 9, 3, 1});
+   RTensor<T> W({1, 1, 3, 3});
    std::fill(W.begin(), W.end(), 1.0);
    // Bias
    RTensor<T> B({1});
    // Output
-   RTensor<T> Y({1, 2, 5, 5}, {50, 25, 5, 1});
+   RTensor<T> Y({1, 2, 5, 5});
    // True Output
    T data[50] = {12.,  21.,  27.,  33.,  24.,
                  33.,  54.,  63.,  72.,  51.,
@@ -264,7 +265,7 @@ bool testROperatorConvBatch(double tol) {
                  63.,  99., 108., 117.,  81.,
                  93., 144., 153., 162., 111.,
                  72., 111., 117., 123.,  84.};
-   RTensor<T> TrueY(data, {1, 2, 5, 5}, {50, 25, 5, 1});
+   RTensor<T> TrueY(data, {1, 2, 5, 5});
 
    ROperatorConv<T> conv("NOTSET",     // autopad
                          {},           // dilations
@@ -285,22 +286,22 @@ bool testROperatorConvBatch(double tol) {
 
 template<typename T>
 bool testROperatorConvGrouped(double tol) {
-   using TMVA::Experimental::RTensor;
+   using namespace TMVA::Experimental;
    using TMVA::Experimental::SOFIE::ROperatorConv;
    // Input
-   RTensor<T> X({1, 4, 2, 2}, {16, 4, 2, 1});
+   RTensor<T> X({1, 4, 2, 2});
    std::iota(X.begin(), X.end(), 0.0);
    // Kernel
-   RTensor<T> W({4, 2, 2, 2}, {8, 4, 2, 1});
+   RTensor<T> W({4, 2, 2, 2});
    std::iota(W.begin(), W.end(), 0.0);
    // Bias
    RTensor<T> B({4});
    std::iota(B.begin(), B.end(), 0.0);
    // Output
-   RTensor<T> Y({4, 1, 1, 1}, {1, 1, 1, 1});
+   RTensor<T> Y({4, 1, 1, 1});
    // True Output
    T data[4] = {140., 365., 1838., 2575.};
-   RTensor<T> TrueY(data, {4, 1, 1, 1}, {1, 1, 1, 1});
+   RTensor<T> TrueY(data, {4, 1, 1, 1});
 
    ROperatorConv<T> conv("NOTSET",     // autopad
                          {},           // dilations

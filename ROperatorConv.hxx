@@ -166,11 +166,7 @@ void ROperatorConv<T>::Forward_blas(const RTensor<T> &X,
 
       RTensor<T> XPad(
           {batchSize, channels, height + padsTop + padsBottom,
-            width + padsLeft + padsRight},
-          {channels * (height + padsTop + padsBottom) * (width +
-            padsLeft + padsRight),
-           (height + padsTop + padsBottom) * (width + padsLeft +
-            padsRight), width + padsLeft + padsRight, 1});
+            width + padsLeft + padsRight});
       // Padding the input with zeros
       for (std::size_t n = 0; n < batchSize; n++) {
          for (std::size_t c = 0; c < channels; c++) {
@@ -191,15 +187,14 @@ void ROperatorConv<T>::Forward_blas(const RTensor<T> &X,
 
       RTensor<T> XCol({channels * kernelHeight * kernelWidth,
                        batchSize * outputHeight * outputWidth},
-                      {1, channels * kernelHeight * kernelWidth},
-                      MemoryLayout::ColumnMajor);
+                        MemoryLayout::ColumnMajor);
       // Unroll the input tensor
       Im2Col(XPad, XCol, group, depth, kernelHeight, kernelWidth, stridesHeight,
              stridesWidth);
 
       // Convolution kernels,  kernels x depth x kernelHeight x KernelWidth
-      RTensor<T> F({kernels, depth * kernelHeight * kernelWidth}, {1, kernels},
-                   MemoryLayout::ColumnMajor);
+      RTensor<T> F({kernels, depth * kernelHeight * kernelWidth},
+                  MemoryLayout::ColumnMajor);
       // Vectorize the (dilated)convolution kernels into a matrix
       for (std::size_t k = 0; k < kernels; k++) {
          for (std::size_t d = 0; d < depth; d++) {

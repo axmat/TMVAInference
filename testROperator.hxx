@@ -29,7 +29,7 @@ bool IsApprox(const TMVA::Experimental::RTensor<T> &A,
    const auto &dataA = A.GetData();
    const auto &dataB = B.GetData();
    for (std::size_t i=0; i < size; i++)
-      if (abs(static_cast<double>(dataA[i] - dataB[i])) > tol)
+      if (std::abs(static_cast<double>(dataA[i] - dataB[i])) > tol)
          return false;
 
    return true;
