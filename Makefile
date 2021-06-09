@@ -1,8 +1,8 @@
 CXX = clang++
-CPPFLAGS = -std=c++11
+CPPFLAGS = -std=c++14
 ROOTFLAGS = `root-config --cflags`
-BLASDIR = /usr/include/openblas
-BLASFLAGS = -L${BLASDIR} -lopenblas
+BLASDIR = /usr/local/lib/BLAS-3.8.0
+BLASFLAGS = -L${BLASDIR} -lblas
 SRC = ${wildcard *.cxx}
 
 test: ${SRC:%.cxx=%.o}
