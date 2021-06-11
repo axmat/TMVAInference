@@ -233,7 +233,13 @@ void ROperatorRNN<T>::Forward_blas(RTensor<T> &X,
                hidden_state + previous_seq_start, &n, &alpha,
                hidden_state + seq_start, &n);
          }
-         // TODO clip
+         // Clip the elements of hidden_state into the range [-fClip, fClip]
+         if (fClip > 0.) {
+            for (size_t i = seq_start; i < seq_end; i++) {
+               T x = (hidden_state[i] > -fClip)? hidden_state[i] : -fClip;
+               hidden_state[i] = (x < fClip)? x : fClip;
+            }
+         }
          // Apply the activation function
          if (fActivations[direction] == "Relu") {
             for (size_t i = seq_start; i < seq_end; i++) {
