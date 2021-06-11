@@ -3,6 +3,7 @@
 #include <TMVA/RTensor.hxx>
 
 #include "testROperatorConv.hxx"
+#include "testROperatorRNN.hxx"
 
 int main(int argc, char *argv[]) {
    if (argc != 2) {
@@ -20,6 +21,12 @@ int main(int argc, char *argv[]) {
    if (operator_name == "Conv") {
       std::cout << "-----------------------------------------------------------------" << std::endl;
       failed |= testROperatorConv<float>(1.E-3);
+      std::cout << (failed? "Test Failed" : "Test Passed" ) << std::endl;
+
+      return failed;
+   } else if (operator_name == "RNN") {
+      std::cout << "-----------------------------------------------------------------" << std::endl;
+      failed |= testROperatorRNN<float>(1.E-3);
       std::cout << (failed? "Test Failed" : "Test Passed" ) << std::endl;
 
       return failed;
