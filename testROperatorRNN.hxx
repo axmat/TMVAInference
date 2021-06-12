@@ -17,11 +17,16 @@ template<typename T>
 bool testROperatorRNN_bidirectional_batchwise(double tol);
 
 template<typename T>
+bool testROperatorRNN_forward(double tol);
+
+template<typename T>
 bool testROperatorRNN(double tol) {
    bool failed = false;
 
    failed |= testROperatorRNN_bidirectional<T>(tol);
    failed |= testROperatorRNN_bidirectional_batchwise<T>(tol);
+   failed |= testROperatorRNN_forward<T>(tol);
+
    return failed;
 }
 
@@ -218,6 +223,77 @@ bool testROperatorRNN_bidirectional_batchwise(double tol) {
 
    bool failed = !IsApprox(y, true_y, tol) || !IsApprox(y_h, true_y_h, tol);
    std::cout << "   Batchwise Bidirectional RNN : Test ";
+   std::cout << (failed? "Failed" : "Passed" ) << std::endl;
+
+   return failed;
+}
+
+template<typename T>
+bool testROperatorRNN_forward(double tol) {
+   using namespace TMVA::Experimental;
+   using TMVA::Experimental::SOFIE::ROperatorRNN;
+   const size_t seq_length = 2;
+   const size_t batch_size = 3;
+   const size_t input_size = 3;
+   const size_t hidden_size = 5;
+
+   T x_data[seq_length * batch_size * input_size] = {
+      0.01, 0.02, 0.03,
+      0.04, 0.05, 0.06,
+      0.07, 0.08, 0.09,
+      0.1 , 0.11, 0.12,
+      0.13, 0.14, 0.15,
+      0.16, 0.17, 0.18};
+   RTensor<T> x(x_data, {seq_length, batch_size, input_size});
+
+   T w_data[hidden_size * input_size] = {
+       0.17244112,  0.43839353, -0.8767394,
+      -0.7451854 ,  0.95555747,  0.57059574,
+       0.8873628 ,  0.41318333,  0.9505067,
+       0.39907658, -0.9042908 ,  0.32292694,
+       2.1221848 ,  0.24675833, -0.5175528};
+   RTensor<T> w(w_data, {1, hidden_size, input_size});
+
+   T r_data[hidden_size * hidden_size] = {
+      -0.3538616 , -1.7107042 , -0.57643396,  0.71042347, -1.6298728,
+       1.646922  ,  0.0743815 ,  1.600358  , -0.43490064, -1.2173619,
+      -1.0533832 ,  0.27596667, -1.8260423 , -0.6393682 ,  0.8086523,
+       1.4254899 ,  1.0429248 , -0.6465876 ,  1.5841872 , -0.8080765,
+      -1.0693161 ,  0.53074974, -1.1467112 , -0.62543255,  0.8353564
+   };
+   RTensor<T> r(r_data, {1, hidden_size, hidden_size});
+
+   T b_data[2 * hidden_size] = {
+      1.0725956,  0.04914486, -0.40236193, -0.5165786,  1.8941225 ,
+      0.69393295, 0.11429706, -1.6716264,  -2.2173078, -1.76375};
+   RTensor<T> b(b_data, {1, 2 * hidden_size});
+
+   RTensor<T> sequence_lens({});
+   RTensor<T> initial_h({});
+
+   RTensor<T> y({seq_length, 1 , batch_size, hidden_size});
+   RTensor<T> y_h({1, batch_size, hidden_size});
+
+   T true_y_data[seq_length * batch_size * hidden_size] = {
+      0.9415,  0.1899, -0.9660, -0.9917,  0.1401,
+      0.9405,  0.2124, -0.9612, -0.9918,  0.1941,
+      0.9396,  0.2346, -0.9557, -0.9918,  0.2469,
+      0.5998,  0.4944, -0.2485, -0.9791,  0.8473,
+      0.5049,  0.4680, -0.1433, -0.9803,  0.8751,
+      0.3976,  0.4427, -0.0368, -0.9814,  0.8978};
+   RTensor<T> true_y(true_y_data, {seq_length, 1 , batch_size, hidden_size});
+
+   T true_y_h_data[batch_size * hidden_size] = {
+      0.5998,  0.4944, -0.2485, -0.9791,  0.8473,
+      0.5049,  0.4680, -0.1433, -0.9803,  0.8751,
+      0.3976,  0.4427, -0.0368, -0.9814,  0.8978};
+   RTensor<T> true_y_h(true_y_h_data, {1, batch_size, hidden_size});
+
+   ROperatorRNN<T> rnn({{}, {}, {}, 0.0, "forward", hidden_size, 0});
+   rnn.Forward_blas(x, w, r, b, sequence_lens, initial_h, y, y_h);
+
+   bool failed = !IsApprox(y, true_y, tol) || !IsApprox(y_h, true_y_h, tol);
+   std::cout << "   Forward RNN : Test ";
    std::cout << (failed? "Failed" : "Passed" ) << std::endl;
 
    return failed;
