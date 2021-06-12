@@ -8,15 +8,14 @@
 #include <string>
 
 #include "Blas.hxx"
-//#include "testROperator.hxx"
 
 namespace TMVA {
 namespace Experimental {
 namespace SOFIE {
 
 // Operator RNN
-template<typename T> class ROperatorRNN {
-private:
+template <typename T> class ROperatorRNN {
+ private:
    /* Attributes */
    std::vector<T> fActivationAlpha;
    std::vector<T> fActivationBeta;
@@ -26,15 +25,15 @@ private:
    std::size_t fHiddenSize;
    std::size_t fLayout;
 
-public:
+ public:
    /* Constructor */
    ROperatorRNN(std::vector<T> activationAlpha, std::vector<T> activationBeta,
-      std::vector<std::string> activations, T clip, std::string direction,
-      std::size_t hiddenSize, std::size_t layout):
-      fActivationAlpha(activationAlpha), fActivationBeta(activationBeta),
-      fActivations(activations), fClip(clip), fDirection(direction),
-      fHiddenSize(hiddenSize), fLayout(layout)
-   {}
+                std::vector<std::string> activations, T clip,
+                std::string direction, std::size_t hiddenSize,
+                std::size_t layout)
+       : fActivationAlpha(activationAlpha), fActivationBeta(activationBeta),
+         fActivations(activations), fClip(clip), fDirection(direction),
+         fHiddenSize(hiddenSize), fLayout(layout) {}
 
    /* Forward pass using Blas */
    void Forward_blas(RTensor<T> &X,
@@ -45,10 +44,9 @@ public:
                      RTensor<T> &initial_h,
                      RTensor<T> &Y,
                      RTensor<T> &Yh);
-
 };
 
-template<typename T>
+template <typename T>
 void ROperatorRNN<T>::Forward_blas(RTensor<T> &X,
                                    RTensor<T> &W,
                                    RTensor<T> &R,
@@ -57,15 +55,27 @@ void ROperatorRNN<T>::Forward_blas(RTensor<T> &X,
                                    RTensor<T> &initial_h,
                                    RTensor<T> &Y,
                                    RTensor<T> &Y_h) {
-   // TODO Check the attributes
-   if (fDirection != "forward" && fDirection != "backward"
-      && fDirection != "bidirectional") {
-      throw
-         std::runtime_error("TMVA SOFIE - Invalid fDirection = " + fDirection);
+   // Check the attributes
+   for (auto &activation : fActivations) {
+      if (activation != "Relu" && activation != "Tanh" &&
+          activation != "Sigmoid" && activation != "Affine" &&
+          activation != "LeakyRelu" && activation != "ThresholdRelu" &&
+          activation != "ScaledTanh" && activation != "HardSigmoid" &&
+          activation != "Elu" && activation != "Softsign" &&
+          activation != "Softplus") {
+         throw std::runtime_error("TMVA SOFIE - Activation function " +
+                                  activation + " not implemented");
+      }
+   }
+   if (fDirection != "forward" && fDirection != "backward" &&
+       fDirection != "bidirectional") {
+      throw std::runtime_error(
+          "TMVA SOFIE - Invalid RNN direction fDirection = " + fDirection);
    }
    if (fLayout > 1) {
-      throw
-         std::runtime_error("TMVA SOFIE - Invalid fLayout = " + std::to_string(fLayout));
+      throw std::runtime_error(
+          "TMVA SOFIE - Layout fLayout = " + std::to_string(fLayout) +
+          " must be 0 (timewise) or 1 (batchwise)");
    }
 
    // Activation functions
@@ -77,21 +87,22 @@ void ROperatorRNN<T>::Forward_blas(RTensor<T> &X,
       }
    }
    // Default values of alpha and beta
-   for (size_t i=0; i < fActivations.size(); i++) {
+   for (size_t i = 0; i < fActivations.size(); i++) {
       if (fActivations[i] == "LeakyRelu") {
-         if (fActivationAlpha.size() < i+1)
+         if (fActivationAlpha.size() < i + 1)
             fActivationAlpha.push_back(0.01);
       } else if (fActivations[i] == "ThresholdedRelu") {
-         if (fActivationAlpha.size() < i+1) {
+         if (fActivationAlpha.size() < i + 1) {
             fActivationAlpha.push_back(0.1);
          }
       } else if (fActivations[i] == "HardSigmoid") {
-          if (fActivationAlpha.size() < i+1 && fActivationBeta.size() < i+1) {
+         if (fActivationAlpha.size() < i + 1 &&
+             fActivationBeta.size() < i + 1) {
             fActivationAlpha.push_back(.2);
             fActivationBeta.push_back(.5);
          }
       } else if (fActivations[i] == "Elu") {
-         if (fActivationAlpha.size() < i+1) {
+         if (fActivationAlpha.size() < i + 1) {
             fActivationAlpha.push_back(1.);
          }
       }
@@ -113,43 +124,42 @@ void ROperatorRNN<T>::Forward_blas(RTensor<T> &X,
    std::size_t hidden_size = W.GetShape()[1];
 
    // set the input
-   T* input = nullptr;
+   T *input = nullptr;
    if (fLayout == 0) {
       input = X.GetData();
    } else {
-      // reshape x
+      // reshape X
       input = new T[seq_length * batch_size * input_size];
-      for(size_t seq = 0; seq < seq_length; seq++) {
+      for (size_t seq = 0; seq < seq_length; seq++) {
          for (size_t batch = 0; batch < batch_size; batch++) {
-            for(size_t i = 0; i < input_size; i++) {
-               input[seq * batch_size * input_size + batch * input_size + i] = X.GetData()[
-                  batch * seq_length * input_size + seq * input_size + i];
+            for (size_t i = 0; i < input_size; i++) {
+               input[seq * batch_size * input_size + batch * input_size + i] =
+                   X.GetData()[batch * seq_length * input_size + seq * input_size + i];
             }
          }
       }
    }
 
    // Broadcasting the bias
-   T* bias = nullptr;
+   T *bias = nullptr;
    if (B.GetShape().size() > 0) {
       bias = new T[num_directions * seq_length * batch_size * hidden_size];
-      T* sum_bias = new T[hidden_size];
+      T sum_bias[hidden_size];
       for (size_t direction = 0; direction < num_directions; direction++) {
          // Compute bias_xh + bias_hh
          for (size_t hid = 0; hid < hidden_size; hid++) {
-            sum_bias[hid] = B.GetData()[direction * 2*hidden_size + hid] + B.GetData()[
-               direction * 2* hidden_size + hidden_size + hid];
+            sum_bias[hid] = B.GetData()[direction * 2 * hidden_size + hid] +
+                B.GetData()[direction * 2 * hidden_size + hidden_size + hid];
          }
          // Copy sum_bias into bias
          for (size_t seq = 0; seq < seq_length; seq++) {
             for (size_t batch = 0; batch < batch_size; batch++) {
-               std::copy(sum_bias, sum_bias + hidden_size,
-                  bias + direction * seq_length * batch_size * hidden_size + seq * batch_size * hidden_size
-                      + batch * hidden_size);
+               size_t bias_offset = direction * seq_length * batch_size * hidden_size +
+                                    seq * batch_size * hidden_size + batch * hidden_size;
+               std::copy(sum_bias, sum_bias + hidden_size, bias + bias_offset);
             }
          }
       }
-      delete[] sum_bias;
    }
 
    // sequence_lens of shape batch_size
@@ -159,27 +169,28 @@ void ROperatorRNN<T>::Forward_blas(RTensor<T> &X,
    }
 
    // set the initial hidden state
-   T* initial_hidden_state = nullptr;
+   T *initial_hidden_state = nullptr;
    if (initial_h.GetShape().size() > 0) {
       if (fLayout == 0) {
          initial_hidden_state = initial_h.GetData();
       } else {
          initial_hidden_state = new T[num_directions * batch_size * hidden_size];
-         for (size_t direction=0; direction < num_directions; direction++) {
-            for (size_t batch=0; batch < batch_size; batch++) {
-               for (size_t hid=0; hid < hidden_size; hid++) {
-                  initial_hidden_state[direction * batch_size * hidden_size + batch * hidden_size + hid] =
-                     initial_h.GetData()[batch * num_directions * hidden_size + direction * hidden_size
-                        + hid];
+         for (size_t direction = 0; direction < num_directions; direction++) {
+            for (size_t batch = 0; batch < batch_size; batch++) {
+               for (size_t hid = 0; hid < hidden_size; hid++) {
+                  initial_hidden_state[direction * batch_size * hidden_size +
+                                       batch * hidden_size + hid] =
+                      initial_h.GetData()[batch * num_directions * hidden_size +
+                                          direction * hidden_size + hid];
                }
             }
          }
       }
    }
 
-   T* feedforward = new T[seq_length * batch_size * hidden_size];
+   T feedforward[seq_length * batch_size * hidden_size];
    // set the hidden state
-   T * hidden_state = nullptr;
+   T *hidden_state = nullptr;
    if (fLayout == 0 && Y.GetShape().size() > 0) {
       hidden_state = Y.GetData();
    } else {
@@ -196,104 +207,112 @@ void ROperatorRNN<T>::Forward_blas(RTensor<T> &X,
       int k = input_size;
       float alpha = 1.;
       float beta = 0.;
-      BLAS::sgemm_(&transB, &transA, &n, &m1, &k, &alpha,
-         W.GetData() + direction * hidden_size * input_size, &k,
-         input, &k, &beta, feedforward, &n);
-      int feedforward_size = seq_length * batch_size * hidden_size;
+      size_t w_offset = direction * hidden_size * input_size;
+      BLAS::sgemm_(&transB, &transA, &n, &m1, &k, &alpha, W.GetData() + w_offset, &k,
+                   input, &k, &beta, feedforward, &n);
+      int bias_size = seq_length * batch_size * hidden_size;
       int incx = 1;
       int incy = 1;
-      BLAS::saxpy_(&feedforward_size, &alpha, bias + direction * seq_length * batch_size * hidden_size,
-         &incx, feedforward, &incy);
+      size_t bias_offset = direction * seq_length * batch_size * hidden_size;
+      BLAS::saxpy_(&bias_size, &alpha, bias + bias_offset, &incx, feedforward, &incy);
       // Copy feedforward to hidden_state
       for (size_t seq = 0; seq < seq_length; seq++) {
-         std::copy(feedforward + seq * batch_size * hidden_size,
-            feedforward + (seq + 1) * batch_size * hidden_size,
-            hidden_state + seq * num_directions * batch_size * hidden_size + direction * batch_size * hidden_size);
+         size_t feedforward_offset = seq * batch_size * hidden_size;
+         size_t feedforward_size = batch_size * hidden_size;
+         size_t offset = seq * num_directions * batch_size * hidden_size +
+                         direction * batch_size * hidden_size;
+         std::copy(feedforward + feedforward_offset, feedforward + feedforward_offset + feedforward_size,
+                   hidden_state + offset);
       }
 
       for (size_t seq = 0; seq < seq_length; seq++) {
-         size_t index = backward? seq_length - 1 - seq : seq;
-         // Compute hidden_state_{seq} = 1.0 * hidden_state_{seq} + hidden_state_{seq-1} * R^T
-         // hidden_state_{seq} is the slice hidden_state[seq_start...seq_end]
+         size_t index = backward ? seq_length - 1 - seq : seq;
+         // Compute hidden_state_{seq} = 1.0 * hidden_state_{seq} +
+         // hidden_state_{seq-1} * R^T hidden_state_{seq} is the slice
+         // hidden_state[offset...offset + size]
          int m2 = batch_size;
-         size_t seq_start = index * num_directions * batch_size * hidden_size + direction * batch_size * hidden_size;
-         size_t seq_end = index * num_directions * batch_size * hidden_size + (direction + 1) * batch_size * hidden_size;
+         size_t offset = index * num_directions * batch_size * hidden_size +
+                         direction * batch_size * hidden_size;
+         size_t size = batch_size * hidden_size;
          if (seq == 0) {
             if (initial_hidden_state) {
-               BLAS::sgemm_(&transB, &transA, &n, &m2 , &n, &alpha,
-                  R.GetData() + direction * hidden_size * hidden_size, &n,
-                  initial_hidden_state + direction * batch_size * hidden_size, &n, &alpha,
-                  hidden_state + seq_start, &n);
+               size_t r_offset = direction * hidden_size * hidden_size;
+               size_t initial_hidden_state_offset = direction * batch_size * hidden_size;
+               BLAS::sgemm_(&transB, &transA, &n, &m2, &n, &alpha, R.GetData() + r_offset, &n,
+                            initial_hidden_state + initial_hidden_state_offset, &n, &alpha,
+                            hidden_state + offset, &n);
             }
          } else {
-            size_t previous_seq_start = (backward? (index + 1): (seq - 1)) * num_directions * batch_size * hidden_size
-               + direction * batch_size * hidden_size;
-            BLAS::sgemm_(&transB, &transA, &n, &m2, &n, &alpha,
-               R.GetData() + direction * hidden_size * hidden_size, &n,
-               hidden_state + previous_seq_start, &n, &alpha,
-               hidden_state + seq_start, &n);
+            size_t r_offset = direction * hidden_size * hidden_size;
+            size_t previous_offset = (backward ? (index + 1) : (seq - 1)) * num_directions * batch_size *
+                                         hidden_size + direction * batch_size * hidden_size;
+            BLAS::sgemm_(&transB, &transA, &n, &m2, &n, &alpha, R.GetData() + r_offset, &n,
+                         hidden_state + previous_offset, &n, &alpha, hidden_state + offset, &n);
          }
-         // Clip the elements of hidden_state into the range [-fClip, fClip]
+         // Clip the elements of hidden_state_{seq} into the range [-fClip,
+         // fClip]
          if (fClip > 0.) {
-            for (size_t i = seq_start; i < seq_end; i++) {
-               T x = (hidden_state[i] > -fClip)? hidden_state[i] : -fClip;
-               hidden_state[i] = (x < fClip)? x : fClip;
+            for (size_t i = offset; i < offset + size; i++) {
+               T x = (hidden_state[i] > -fClip) ? hidden_state[i] : -fClip;
+               hidden_state[i] = (x < fClip) ? x : fClip;
             }
          }
          // Apply the activation function
          if (fActivations[direction] == "Relu") {
-            for (size_t i = seq_start; i < seq_end; i++) {
-               if (hidden_state[i] > 0)
+            for (size_t i = offset; i < offset + size; i++) {
+               if (hidden_state[i] > 0.)
                   hidden_state[i] = 0.;
             }
          } else if (fActivations[direction] == "Tanh") {
-            for (size_t i = seq_start; i < seq_end; i++) {
+            for (size_t i = offset; i < offset + size; i++) {
                float ex = exp(-2 * hidden_state[i]);
                hidden_state[i] = (1. - ex) / (1. + ex);
             }
          } else if (fActivations[direction] == "Sigmoid") {
-            for (size_t i = seq_start; i < seq_end; i++) {
+            for (size_t i = offset; i < offset + size; i++) {
                hidden_state[i] = 1. / (1. + exp(-hidden_state[i]));
             }
          } else if (fActivations[direction] == "Affine") {
-            for (size_t i = seq_start; i < seq_end; i++) {
+            for (size_t i = offset; i < offset + size; i++) {
                hidden_state[i] = fActivationAlpha[direction] * hidden_state[i] + fActivationBeta[direction];
             }
          } else if (fActivations[direction] == "LeakyRelu") {
-            for (size_t i = seq_start; i < seq_end; i++) {
+            for (size_t i = offset; i < offset + size; i++) {
                if (hidden_state[i] < 0.) {
-                  hidden_state[i] = fActivationAlpha[direction] * hidden_state[i];;
+                  hidden_state[i] = fActivationAlpha[direction] * hidden_state[i];
+                  ;
                }
             }
          } else if (fActivations[direction] == "ThresholdRelu") {
-            for (size_t i = seq_start; i < seq_end; i++) {
-               if (hidden_state[i] < 0. ) {
+            for (size_t i = offset; i < offset + size; i++) {
+               if (hidden_state[i] < 0.) {
                   hidden_state[i] = 0.;
                }
             }
          } else if (fActivations[direction] == "ScaledTanh") {
-            for (size_t i = seq_start; i < seq_end; i++) {
+            for (size_t i = offset; i < offset + size; i++) {
                float x = exp(-2 * fActivationBeta[direction] * hidden_state[i]);
                hidden_state[i] = fActivationAlpha[direction] * (1. - x) / (1. + x);
             }
          } else if (fActivations[direction] == "HardSigmoid") {
-            for (size_t i = seq_start; i < seq_end; i++) {
-               float x = ((fActivationAlpha[direction] * hidden_state[i] + fActivationBeta[direction]) > 0)?
-                  fActivationAlpha[direction] * hidden_state[i] + fActivationBeta[direction] : 0.;
-               hidden_state[i] = (x < 1.)? x : 1.;
+            for (size_t i = offset; i < offset + size; i++) {
+               float x = ((fActivationAlpha[direction] * hidden_state[i] + fActivationBeta[direction]) > 0)
+                             ? fActivationAlpha[direction] * hidden_state[i] + fActivationBeta[direction]
+                             : 0.;
+               hidden_state[i] = (x < 1.) ? x : 1.;
             }
          } else if (fActivations[direction] == "Elu") {
-            for (size_t i = seq_start; i < seq_end; i++) {
+            for (size_t i = offset; i < offset + size; i++) {
                if (hidden_state[i] < 0) {
                   hidden_state[i] = fActivationAlpha[direction] * (exp(hidden_state[i] - 1.));
                }
             }
          } else if (fActivations[direction] == "Softsign") {
-            for (size_t i = seq_start; i < seq_end; i++) {
+            for (size_t i = offset; i < offset + size; i++) {
                hidden_state[i] = hidden_state[i] / (1. + abs(hidden_state[i]));
             }
-         } else{ // Softplus
-            for (size_t i=seq_start; i < seq_end; i++) {
+         } else { // Softplus
+            for (size_t i = offset; i < offset + size; i++) {
                hidden_state[i] = log(1. + exp(hidden_state[i]));
             }
          }
@@ -306,12 +325,13 @@ void ROperatorRNN<T>::Forward_blas(RTensor<T> &X,
       if (Y_h.GetShape().size() > 0) {
          for (size_t direction = 0; direction < num_directions; direction++) {
             bool backward = (fDirection == "backward") || (direction == 1);
-            size_t seq = backward? 0 : seq_length - 1;
-            std::copy(hidden_state + seq * num_directions * batch_size * hidden_size 
-                  + direction * batch_size * hidden_size,
-               hidden_state + seq * num_directions * batch_size * hidden_size
-                  + (direction + 1) * batch_size * hidden_size,
-               Y_h.GetData() + direction * batch_size * hidden_size);
+            size_t seq = backward ? 0 : seq_length - 1;
+            size_t offset = seq * num_directions * batch_size * hidden_size +
+                            direction * batch_size * hidden_size;
+            size_t size = batch_size * hidden_size;
+            size_t y_h_offset = direction * batch_size * hidden_size;
+            std::copy(hidden_state + offset, hidden_state + offset + size,
+                      Y_h.GetData() + y_h_offset);
          }
       }
    } else {
@@ -319,12 +339,12 @@ void ROperatorRNN<T>::Forward_blas(RTensor<T> &X,
          for (size_t seq = 0; seq < seq_length; seq++) {
             for (size_t direction = 0; direction < num_directions; direction++) {
                for (size_t batch = 0; batch < batch_size; batch++) {
-                  std::copy(hidden_state + seq * num_directions * batch_size * hidden_size
-                     + direction * batch_size * hidden_size + batch * hidden_size,
-                     hidden_state + seq * num_directions * batch_size * hidden_size 
-                     + direction * batch_size * hidden_size + (batch + 1) * hidden_size,
-                     Y.GetData() + batch * seq_length * num_directions * hidden_size
-                     + seq * num_directions * hidden_size + direction * hidden_size);
+                  size_t offset = seq * num_directions * batch_size * hidden_size +
+                      direction * batch_size * hidden_size + batch * hidden_size;
+                  size_t y_offset = batch * seq_length * num_directions * hidden_size +
+                      seq * num_directions * hidden_size + direction * hidden_size;
+                  std::copy(hidden_state + offset, hidden_state + offset + hidden_size,
+                            Y.GetData() + y_offset);
                }
             }
          }
@@ -333,12 +353,12 @@ void ROperatorRNN<T>::Forward_blas(RTensor<T> &X,
          for (size_t batch = 0; batch < batch_size; batch++) {
             for (size_t direction = 0; direction < num_directions; direction++) {
                bool backward = (fDirection == "backward") || (direction == 1);
-               size_t seq = backward? 0 : seq_length - 1;
-               std::copy(hidden_state + seq * num_directions * batch_size * hidden_size
-               + direction * batch_size * hidden_size + batch * hidden_size,
-               hidden_state + seq * num_directions * batch_size * hidden_size
-               + direction * batch_size * hidden_size + (batch + 1) * hidden_size,
-               Y_h.GetData() + batch * num_directions * hidden_size + direction * hidden_size);
+               size_t seq = backward ? 0 : seq_length - 1;
+               size_t offset = seq * num_directions * batch_size * hidden_size +
+                               direction * batch_size * hidden_size + batch * hidden_size;
+               size_t y_h_offset = batch * num_directions * hidden_size + direction * hidden_size;
+               std::copy(hidden_state + offset, hidden_state + offset + hidden_size,
+                         Y_h.GetData() + y_h_offset);
             }
          }
       }
@@ -350,14 +370,13 @@ void ROperatorRNN<T>::Forward_blas(RTensor<T> &X,
    if (fLayout == 1) {
       delete[] input;
       delete[] initial_hidden_state;
-      if (Y.GetShape().size() ==0) delete[] hidden_state;
+      if (Y.GetShape().size() == 0)
+         delete[] hidden_state;
    }
-   delete[] feedforward;
 }
 
-
-}
-}
-}
+} // namespace SOFIE
+} // namespace Experimental
+} // namespace TMVA
 
 #endif
