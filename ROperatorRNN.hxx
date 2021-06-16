@@ -91,20 +91,23 @@ void ROperatorRNN<T>::Forward_blas(RTensor<T> &X,
       if (fActivations[i] == "LeakyRelu") {
          if (fActivationAlpha.size() < i + 1)
             fActivationAlpha.push_back(0.01);
+         if (fActivationBeta.size() < i + 1)
+            fActivationBeta.push_back(0.0);
       } else if (fActivations[i] == "ThresholdedRelu") {
-         if (fActivationAlpha.size() < i + 1) {
+         if (fActivationAlpha.size() < i + 1)
             fActivationAlpha.push_back(0.1);
-         }
+         if (fActivationBeta.size() < i + 1)
+            fActivationBeta.push_back(0.0);
       } else if (fActivations[i] == "HardSigmoid") {
-         if (fActivationAlpha.size() < i + 1 &&
-             fActivationBeta.size() < i + 1) {
+         if (fActivationAlpha.size() < i + 1)
             fActivationAlpha.push_back(.2);
+         if (fActivationBeta.size() < i + 1)
             fActivationBeta.push_back(.5);
-         }
       } else if (fActivations[i] == "Elu") {
-         if (fActivationAlpha.size() < i + 1) {
+         if (fActivationAlpha.size() < i + 1)
             fActivationAlpha.push_back(1.);
-         }
+         if (fActivationBeta.size() < i + 1)
+            fActivationBeta.push_back(0.);
       }
    }
 
@@ -147,9 +150,9 @@ void ROperatorRNN<T>::Forward_blas(RTensor<T> &X,
       T sum[hidden_size];
       for (size_t direction = 0; direction < num_directions; direction++) {
          // Compute sum = bias_xh + bias_hh
-         for (size_t hid = 0; hid < hidden_size; hid++) {
-            sum[hid] = B.GetData()[direction * 2 * hidden_size + hid] +
-                B.GetData()[direction * 2 * hidden_size + hidden_size + hid];
+         for (size_t h = 0; h < hidden_size; h++) {
+            sum[h] = B.GetData()[direction * 2 * hidden_size + h] +
+                B.GetData()[direction * 2 * hidden_size + hidden_size + h];
          }
          // Copy sum into bias
          for (size_t seq = 0; seq < seq_length; seq++) {
@@ -171,11 +174,11 @@ void ROperatorRNN<T>::Forward_blas(RTensor<T> &X,
          initial_hidden_state = new T[num_directions * batch_size * hidden_size];
          for (size_t direction = 0; direction < num_directions; direction++) {
             for (size_t batch = 0; batch < batch_size; batch++) {
-               for (size_t hid = 0; hid < hidden_size; hid++) {
+               for (size_t h = 0; h < hidden_size; h++) {
                   initial_hidden_state[direction * batch_size * hidden_size +
-                                       batch * hidden_size + hid] =
+                                       batch * hidden_size + h] =
                       initial_h.GetData()[batch * num_directions * hidden_size +
-                                          direction * hidden_size + hid];
+                                          direction * hidden_size + h];
                }
             }
          }
@@ -254,7 +257,7 @@ void ROperatorRNN<T>::Forward_blas(RTensor<T> &X,
          // Apply the activation function
          if (fActivations[direction] == "Relu") {
             for (size_t i = offset; i < offset + size; i++) {
-               if (hidden_state[i] > 0.)
+               if (hidden_state[i] < 0.)
                   hidden_state[i] = 0.;
             }
          } else if (fActivations[direction] == "Tanh") {
@@ -279,7 +282,7 @@ void ROperatorRNN<T>::Forward_blas(RTensor<T> &X,
             }
          } else if (fActivations[direction] == "ThresholdRelu") {
             for (size_t i = offset; i < offset + size; i++) {
-               if (hidden_state[i] < 0.) {
+               if (hidden_state[i] < fActivationAlpha[direction]) {
                   hidden_state[i] = 0.;
                }
             }
@@ -290,14 +293,13 @@ void ROperatorRNN<T>::Forward_blas(RTensor<T> &X,
             }
          } else if (fActivations[direction] == "HardSigmoid") {
             for (size_t i = offset; i < offset + size; i++) {
-               float x = ((fActivationAlpha[direction] * hidden_state[i] + fActivationBeta[direction]) > 0)
-                             ? fActivationAlpha[direction] * hidden_state[i] + fActivationBeta[direction]
-                             : 0.;
-               hidden_state[i] = (x < 1.) ? x : 1.;
+               float a = fActivationAlpha[direction] * hidden_state[i] + fActivationBeta[direction];
+               float b = (a > 0.) ? a : 0.;
+               hidden_state[i] = (b < 1.) ? b : 1.;
             }
          } else if (fActivations[direction] == "Elu") {
             for (size_t i = offset; i < offset + size; i++) {
-               if (hidden_state[i] < 0) {
+               if (hidden_state[i] < 0.) {
                   hidden_state[i] = fActivationAlpha[direction] * (exp(hidden_state[i] - 1.));
                }
             }
@@ -319,10 +321,10 @@ void ROperatorRNN<T>::Forward_blas(RTensor<T> &X,
          for (size_t batch = 0; batch < batch_size; batch++) {
             if (seq >= sequence_lens.GetData()[batch]) {
                for (size_t direction = 0; direction < num_directions; direction++) {
-                  for (size_t hid = 0; hid < hidden_size; hid++) {
+                  for (size_t h = 0; h < hidden_size; h++) {
                      hidden_state[seq * num_directions * batch_size * hidden_size
                         + direction * batch_size * hidden_size + batch * hidden_size
-                        + hid] = .0;
+                        + h] = .0;
                   }
                }
             }
