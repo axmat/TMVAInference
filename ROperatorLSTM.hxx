@@ -40,7 +40,7 @@ public:
                      RTensor<T> &W,
                      RTensor<T> &R,
                      RTensor<T> &B,
-                     RTensor<T> &sequence_lens,
+                     RTensor<size_t> &sequence_lens,
                      RTensor<T> &initial_h,
                      RTensor<T> &initial_c,
                      RTensor<T> &P,
@@ -55,7 +55,7 @@ void ROperatorLSTM<T>::Forward_blas(RTensor<T> &X,
                                     RTensor<T> &W,
                                     RTensor<T> &R,
                                     RTensor<T> &B,
-                                    RTensor<T> &sequence_lens,
+                                    RTensor<size_t> &sequence_lens,
                                     RTensor<T> &initial_h,
                                     RTensor<T> &initial_c,
                                     RTensor<T> &P,
@@ -388,10 +388,8 @@ void ROperatorLSTM<T>::Forward_blas(RTensor<T> &X,
 
    // TODO copy hidden_state into Y, Y_h, and Y_c
 
-   for (size_t gate = 0; gate < 4; gate++) {
-      if (bias[gate])
-         delete[] bias[gate];
-   }
+   if (bias)
+      delete[] bias;
 
    if (fLayout == 1) {
       delete[] input;
