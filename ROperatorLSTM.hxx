@@ -148,20 +148,10 @@ void ROperatorLSTM<T>::Forward_blas(RTensor<T> &X,
    }
 
    // Broadcasting the bias
-   T* bias_input_gate  = nullptr;
-   T* bias_forget_gate = nullptr;
-   T* bias_output_gate = nullptr;
-   T* bias_cell_input  = nullptr;
+   T* bias = nullptr;
    if (B.GetShape().size() > 0) {
-      size_t new_bias_size = num_directions * seq_length * batch_size * fHiddenSize;
-      bias_input_gate  = new T[new_bias_size];
-      bias_forget_gate = new T[new_bias_size];
-      bias_output_gate = new T[new_bias_size];
-      bias_cell_input  = new T[new_bias_size];
-      T* bias[4] = {bias_input_gate, bias_forget_gate, bias_output_gate, bias_cell_input};
-      for (size_t i = 0; i < 4; i++) {
-         if (i == 3 && fInputForget == 0)
-            continue;
+      bias = new T[4 * num_directions * seq_length * batch_size * fHiddenSize];
+      for (size_t gate = 0; gate < 4; gate++) {
          T sum[fHiddenSize];
          for (size_t direction = 0; direction < num_directions; direction++) {
             // Compute the bias_xh + bias_hh
@@ -172,16 +162,17 @@ void ROperatorLSTM<T>::Forward_blas(RTensor<T> &X,
             // Copy sum into bias
             for (size_t seq = 0; seq < seq_length; seq++) {
                for (size_t batch = 0; batch < batch_size; batch++) {
-                  size_t bias_offset = direction * seq_length * batch_size * fHiddenSize +
-                     seq * batch_size * fHiddenSize + batch * fHiddenSize;
-                  std::copy(sum, sum + fHiddenSize, bias[i] + bias_offset);
+                  size_t bias_offset = gate * num_directions * seq_length * batch_size * fHiddenSize
+                     + direction * seq_length * batch_size * fHiddenSize
+                     + seq * batch_size * fHiddenSize + batch * fHiddenSize;
+                  std::copy(sum, sum + fHiddenSize, bias + bias_offset);
                }
             }
          }
       }
    }
 
-   // set the initial hidden state
+   // Set the initial hidden state
    T* initial_hidden_state = nullptr;
    if (initial_h.GetShape().size() > 0) {
       if (fLayout == 0) {
@@ -190,16 +181,16 @@ void ROperatorLSTM<T>::Forward_blas(RTensor<T> &X,
          initial_hidden_state = new T[num_directions * batch_size * fHiddenSize];
          for (size_t direction=0; direction < num_directions; direction++) {
             for (size_t batch=0; batch < batch_size; batch++) {
-               for (size_t hid=0; hid < fHiddenSize; hid++) {
-                  initial_hidden_state[direction * batch_size * fHiddenSize + batch * fHiddenSize + hid] =
+               for (size_t h=0; h < fHiddenSize; h++) {
+                  initial_hidden_state[direction * batch_size * fHiddenSize + batch * fHiddenSize + h] =
                      initial_h.GetData()[batch * num_directions * fHiddenSize + direction * fHiddenSize
-                        + hid];
+                        + h];
                }
             }
          }
       }
    }
-   // set the initial cell state
+   // Set the initial cell state
    T* initial_cell_state = nullptr;
    if (initial_c.GetShape().size() > 0) {
       if (fLayout == 0) {
@@ -208,146 +199,77 @@ void ROperatorLSTM<T>::Forward_blas(RTensor<T> &X,
          initial_cell_state = new T[num_directions * batch_size * fHiddenSize];
          for (size_t direction=0; direction < num_directions; direction++) {
             for (size_t batch=0; batch < batch_size; batch++) {
-               for (size_t hid=0; hid < fHiddenSize; hid++) {
-                  initial_cell_state[direction * batch_size * fHiddenSize + batch * fHiddenSize + hid] =
+               for (size_t h=0; h < fHiddenSize; h++) {
+                  initial_cell_state[direction * batch_size * fHiddenSize + batch * fHiddenSize + h] =
                      initial_c.GetData()[batch * num_directions * fHiddenSize + direction * fHiddenSize
-                        + hid];
+                        + h];
                }
             }
          }
       }
    }
 
-   // Feed forward
-   size_t feedforward_size = seq_length * batch_size * fHiddenSize;
-   T feedforward[feedforward_size];
-
-   //
+   // Set the feedforward
+   T feedforward[seq_length * batch_size * fHiddenSize];
+   // Set the gates
    size_t hidden_state_size = seq_length * num_directions * batch_size * fHiddenSize;
    T input_gate[hidden_state_size];
-   // forget gate
    T* forget_gate = nullptr;
    if (fInputForget == 1) {
       forget_gate = new T[hidden_state_size];
    }
-   // output gate
    T output_gate[hidden_state_size];
-   // cell input
    T cell_input[hidden_state_size];
-   // cell state
+   // Set the cell state
    T cell_state[hidden_state_size];
-   // hidden state
+   // Set the hidden state
    T * hidden_state = nullptr;
-   if (fLayout == 0) {
+   if (fLayout == 0 && Y.GetShape().size() > 0) {
       hidden_state = Y.GetData();
    } else {
       hidden_state = new T[hidden_state_size];
    }
 
+   T* gates[4] = {input_gate, forget_gate, output_gate, cell_input};
+
    for (size_t direction = 0; direction < num_directions; direction++) {
-      // feedforward = input * weight_input_gate + bias_input_gate
-      char transA = 'N';
-      char transB = 'T';
-      int m = seq_length * batch_size;
-      int n = fHiddenSize;
-      int k = input_size;
-      float alpha = 1.;
-      float beta = 0.;
-      size_t wi_offset = direction * 4 * fHiddenSize * input_size;
-      BLAS::sgemm_(&transB, &transA, &n, &m, &k, &alpha, W.GetData() + wi_offset, &k,
-         input, &k, &beta, feedforward, &n);
-      if (bias_input_gate) {
-         int bias_size = seq_length * batch_size * fHiddenSize;
-         int incx = 1;
-         int incy = 1;
-         size_t bias_offset = direction * seq_length * batch_size * fHiddenSize;
-         BLAS::saxpy_(&bias_size, &alpha, bias_input_gate + bias_offset, &incx, feedforward, &incy);
-      }
-      // Copy feedforward into input_gate
-      for (size_t seq = 0; seq < seq_length; seq++) {
-         size_t feedforward_offset = seq * batch_size * fHiddenSize;
-         size_t feedforward_size = batch_size * fHiddenSize;
-         size_t offset = seq * num_directions * batch_size * fHiddenSize +
-                         direction * batch_size * fHiddenSize;
-         std::copy(feedforward + feedforward_offset, feedforward + feedforward_offset + feedforward_size,
-                   input_gate + offset);
-      }
-      if (fInputForget == 1) {
-         // feedforward = input * weight_input_gate + bias_forget_gate
-         size_t wf_offset = (direction * 4 +  1) * fHiddenSize * input_size;
-         BLAS::sgemm_(&transB, &transA, &n, &m, &k, &alpha, W.GetData() + wf_offset, &k,
+      for (size_t gate = 0; gate < 4; gate++) {
+         if (gate == 1 && fInputForget == 0)
+            continue;
+         // feedforward = input * weight^T + bias
+         char transA = 'N';
+         char transB = 'T';
+         int m = seq_length * batch_size;
+         int n = fHiddenSize;
+         int k = input_size;
+         float alpha = 1.;
+         float beta = 0.;
+         size_t w_offset = (direction * 4 + gate) * fHiddenSize * input_size;
+         BLAS::sgemm_(&transB, &transA, &n, &m, &k, &alpha, W.GetData() + w_offset, &k,
             input, &k, &beta, feedforward, &n);
-         if (bias_forget_gate) {
+         if (bias) {
             int bias_size = seq_length * batch_size * fHiddenSize;
             int incx = 1;
             int incy = 1;
-            size_t bias_offset = direction * seq_length * batch_size * fHiddenSize;
-            BLAS::saxpy_(&bias_size, &alpha, bias_forget_gate + bias_offset, &incx, feedforward, &incy);
+            size_t bias_offset = gate * num_directions * seq_length * batch_size * fHiddenSize
+               + direction * seq_length * batch_size * fHiddenSize;
+            BLAS::saxpy_(&bias_size, &alpha, bias + bias_offset, &incx, feedforward, &incy);
          }
-         // Copy feedforward into forget_gate
+         // Copy feedforward into the gate
          for (size_t seq = 0; seq < seq_length; seq++) {
             size_t feedforward_offset = seq * batch_size * fHiddenSize;
             size_t feedforward_size = batch_size * fHiddenSize;
             size_t offset = seq * num_directions * batch_size * fHiddenSize +
-                            direction * batch_size * fHiddenSize;
+                         direction * batch_size * fHiddenSize;
             std::copy(feedforward + feedforward_offset, feedforward + feedforward_offset + feedforward_size,
-                      forget_gate + offset);
+                   gates[gate] + offset);
          }
-      }
-      // feedforward = input * weight_output_gate + bias_output_gate
-      size_t wo_offset = (direction * 4 + 2) * fHiddenSize * input_size;
-      BLAS::sgemm_(&transB, &transA, &n, &m, &k, &alpha, W.GetData() + wo_offset, &k,
-         input, &k, &beta, feedforward, &n);
-      if (bias_output_gate) {
-         int bias_size = seq_length * batch_size * fHiddenSize;
-         int incx = 1;
-         int incy = 1;
-         size_t bias_offset = direction * seq_length * batch_size * fHiddenSize;
-         BLAS::saxpy_(&bias_size, &alpha, bias_output_gate + bias_offset, &incx, feedforward, &incy);
-      }
-      // Copy feedforward into output_gate
-      for (size_t seq = 0; seq < seq_length; seq++) {
-         size_t feedforward_offset = seq * batch_size * fHiddenSize;
-         size_t feedforward_size = batch_size * fHiddenSize;
-         size_t offset = seq * num_directions * batch_size * fHiddenSize +
-                         direction * batch_size * fHiddenSize;
-         std::copy(feedforward + feedforward_offset, feedforward + feedforward_offset + feedforward_size,
-                   output_gate + offset);
-      }
-      // feedforward = input * weight_cell_input + bias_cell_input
-      size_t wc_offset = (direction * 4 + 3) * fHiddenSize * input_size;
-      BLAS::sgemm_(&transB, &transA, &n, &m, &k, &alpha, W.GetData() + wc_offset, &k,
-         input, &k, &beta, feedforward, &n);
-      if (bias_cell_input) {
-         int bias_size = seq_length * batch_size * fHiddenSize;
-         int incx = 1;
-         int incy = 1;
-         size_t bias_offset = direction * seq_length * batch_size * fHiddenSize;
-         BLAS::saxpy_(&bias_size, &alpha, bias_cell_input + bias_offset, &incx, feedforward, &incy);
-      }
-      // Copy feedforward into cell_input
-      for (size_t seq = 0; seq < seq_length; seq++) {
-         size_t feedforward_offset = seq * batch_size * fHiddenSize;
-         size_t feedforward_size = batch_size * fHiddenSize;
-         size_t offset = seq * num_directions * batch_size * fHiddenSize +
-                         direction * batch_size * fHiddenSize;
-         std::copy(feedforward + feedforward_offset, feedforward + feedforward_offset + feedforward_size,
-                   cell_input + offset);
       }
 
       for (size_t seq = 0; seq < seq_length; seq++) {
-         // input_gate = 1.0 * input_gate + previous_hidden_state
-         // Clip the elements of input_gate into the range [-fClip, fClip]
-         // input_gate = sigma(input_gate)
-         // forget_gate = 1.0 * forget_gate + previous_hidden_state
-         // Clip the elements of forget_gate into the range [-fClip, fClip]
-         // forget_gate = sigma(forget_gate)
-         // output_gate = 1.0 * output_gate + previous_hidden_state
-         // Clip the elements of output into the range [-fClip, fClip]
-         // output_gate = sigma(output_gate)
-         // cell_input = 1.0 * cell_input + previous_hidden_state
-         // Clip the elements of cell_input into the range [-fClip, fClip]
-         // cell_input = sigma(cell_input)
+         // gate = 1.0 * gate + previous_hidden_state
+         // Clip the elements of the gate into the range [-fClip, fClip]
+         // gate = sigma(gate)
          // cell_state = input_gate o cell_input
          // cell_state = 1.0 * cell_state + forget_gate o previous_cell_state
          // Clip the elements of cell_state into the range [-fClip, fClip]
@@ -360,21 +282,15 @@ void ROperatorLSTM<T>::Forward_blas(RTensor<T> &X,
 
    // TODO copy hidden_state into Y, Y_h, and Y_c
 
-   if (bias_input_gate) {
-      delete[] bias_input_gate;
+   for (size_t gate = 0; gate < 4; gate++) {
+      if (bias[gate])
+         delete[] bias[gate];
    }
-   if (bias_forget_gate) {
-      delete[] bias_forget_gate;
-   }
-   if (bias_output_gate) {
-      delete[] bias_input_gate;
-   }
-   if (bias_cell_input) {
-      delete[] bias_cell_input;
-   }
+
    if (fLayout == 1) {
       delete[] input;
-      delete[] hidden_state;
+      if (Y.GetShape().size() > 0)
+         delete[] hidden_state;
    }
 }
 
