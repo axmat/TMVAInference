@@ -62,6 +62,14 @@ void ROperatorLSTM<T>::Forward_blas(RTensor<T> &X,
                                     RTensor<T> &Y,
                                     RTensor<T> &Y_h,
                                     RTensor<T> &Y_c) {
+   // Activation functions
+   if (fActivations.empty()) {
+      if (fDirection == "forward" || fDirection == "backward") {
+         fActivations = {"Sigmoid", "Tanh", "Tanh"};
+      } else {
+         fActivations = {"Sigmoid", "Tanh", "Tanh", "Sigmoid", "Tanh", "Tanh"};
+      }
+   }
    // Check the attributes
    for (auto &activation : fActivations) {
       if (activation != "Relu" && activation != "Tanh" &&
@@ -91,15 +99,6 @@ void ROperatorLSTM<T>::Forward_blas(RTensor<T> &X,
    if (fLayout > 1) {
       throw
          std::runtime_error("TMVA SOFIE - Invalid fLayout = " + std::to_string(fLayout));
-   }
-
-   // Activation functions
-   if (fActivations.empty()) {
-      if (fDirection == "forward" || fDirection == "backward") {
-         fActivations = {"Sigmoid", "Tanh", "Tanh"};
-      } else {
-         fActivations = {"Sigmoid", "Tanh", "Tanh", "Sigmoid", "Tanh", "Tanh"};
-      }
    }
 
    size_t seq_length = (fLayout == 0) ? X.GetShape()[0] : X.GetShape()[1];
@@ -384,16 +383,137 @@ void ROperatorLSTM<T>::Forward_blas(RTensor<T> &X,
       }
    }
 
-   // TODO LSTM with different sequence lengths
+   // LSTM with different sequence lengths
+   if (sequence_lens.GetShape().size() > 0) {
+      for (size_t seq = 0; seq < seq_length; seq++) {
+         for (size_t batch = 0; batch < batch_size; batch++) {
+            if (seq >= sequence_lens.GetData()[batch]) {
+               for (size_t direction = 0; direction < num_directions; direction++) {
+                  for (size_t h = 0; h < fHiddenSize; h++) {
+                     size_t idx = seq * num_directions * batch_size * fHiddenSize
+                        + direction * batch_size * fHiddenSize + batch * fHiddenSize + h;
+                     cell_state[idx] = 0.;
+                     hidden_state[idx] = 0.;
+                  }
+               }
+            }
+         }
+      }
+   }
 
-   // TODO copy hidden_state into Y, Y_h, and Y_c
+   // copy hidden_state into Y and Y_h, and copy cell_state into Y_c
+   if (fLayout == 0) {
+      if (Y_h.GetShape().size() > 0) {
+         if (sequence_lens.GetShape().size() > 0) {
+            for (size_t direction = 0; direction < num_directions; direction++) {
+               bool backward = (fDirection == "backward") || (direction == 1);
+               for (size_t batch = 0; batch < batch_size; batch++) {
+                  size_t seq = backward ? 0 : (sequence_lens.GetShape().size() > 0 ?
+                     sequence_lens.GetData()[batch] - 1 : seq_length - 1);
+                  size_t offset = seq * num_directions * batch_size * fHiddenSize
+                     + direction * batch_size * fHiddenSize + batch * fHiddenSize;
+                  size_t y_h_offset = direction * batch_size * fHiddenSize
+                     + batch * fHiddenSize;
+                  std::copy(hidden_state + offset, hidden_state + offset + fHiddenSize,
+                     Y_h.GetData() + y_h_offset);
+               }
+            }
+         } else {
+            for (size_t direction = 0; direction < num_directions; direction++) {
+               bool backward = (fDirection == "backward") || (direction == 1);
+               size_t seq = backward ? 0 : seq_length - 1;
+               size_t offset = seq * num_directions * batch_size * fHiddenSize +
+                  direction * batch_size * fHiddenSize;
+               size_t size = batch_size * fHiddenSize;
+               size_t y_h_offset = direction * batch_size * fHiddenSize;
+               std::copy(hidden_state + offset, hidden_state + offset + size,
+                  Y_h.GetData() + y_h_offset);
+            }
+         }
+      }
+      if (Y_c.GetShape().size() > 0) {
+         if (sequence_lens.GetShape().size() > 0) {
+            for (size_t direction = 0; direction < num_directions; direction++) {
+               bool backward = (fDirection == "backward") || (direction == 1);
+               for (size_t batch = 0; batch < batch_size; batch++) {
+                  size_t seq = backward ? 0 : (sequence_lens.GetShape().size() > 0 ?
+                     sequence_lens.GetData()[batch] - 1 : seq_length - 1);
+                  size_t offset = seq * num_directions * batch_size * fHiddenSize
+                     + direction * batch_size * fHiddenSize + batch * fHiddenSize;
+                  size_t y_c_offset = direction * batch_size * fHiddenSize
+                     + batch * fHiddenSize;
+                  std::copy(cell_state + offset, hidden_state + offset + fHiddenSize,
+                     Y_c.GetData() + y_c_offset);
+               }
+            }
+         } else {
+            for (size_t direction = 0; direction < num_directions; direction++) {
+               bool backward = (fDirection == "backward") || (direction == 1);
+               size_t seq = backward ? 0 : seq_length - 1;
+               size_t offset = seq * num_directions * batch_size * fHiddenSize +
+                  direction * batch_size * fHiddenSize;
+               size_t size = batch_size * fHiddenSize;
+               size_t y_c_offset = direction * batch_size * fHiddenSize;
+               std::copy(cell_state + offset, hidden_state + offset + size,
+                  Y_c.GetData() + y_c_offset);
+            }
+         }
+      }
+   } else { // fLayout=1
+      if (Y.GetShape().size() > 0) {
+         for (size_t seq = 0; seq < seq_length; seq++) {
+            for (size_t direction = 0; direction < num_directions; direction++) {
+               for (size_t batch = 0; batch < batch_size; batch++) {
+                  size_t offset = seq * num_directions * batch_size * fHiddenSize +
+                     direction * batch_size * fHiddenSize + batch * fHiddenSize;
+                  size_t y_offset = batch * seq_length * num_directions * fHiddenSize +
+                     seq * num_directions * fHiddenSize + direction * fHiddenSize;
+                  std::copy(hidden_state + offset, hidden_state + offset + fHiddenSize,
+                            Y.GetData() + y_offset);
+               }
+            }
+         }
+      }
+      if (Y_h.GetShape().size() > 0) {
+         for (size_t direction = 0; direction < num_directions; direction++) {
+            bool backward = (fDirection == "backward") || (direction == 1);
+            for (size_t batch = 0; batch < batch_size; batch++) {
+               size_t seq = backward ? 0 : (sequence_lens.GetShape().size() > 0 ?
+                  sequence_lens.GetData()[batch] - 1 : seq_length - 1);
+               size_t offset = seq * num_directions * batch_size * fHiddenSize +
+                  direction * batch_size * fHiddenSize + batch * fHiddenSize;
+               size_t y_h_offset = batch * num_directions * fHiddenSize +
+                  direction * fHiddenSize;
+               std::copy(hidden_state + offset, hidden_state + offset + fHiddenSize,
+                  Y_h.GetData() + y_h_offset);
+            }
+         }
+      }
+      if (Y_c.GetShape().size() > 0) {
+         for (size_t direction = 0; direction < num_directions; direction++) {
+            bool backward = (fDirection == "backward") || (direction == 1);
+            for (size_t batch = 0; batch < batch_size; batch++) {
+               size_t seq = backward ? 0 : (sequence_lens.GetShape().size() > 0 ?
+                  sequence_lens.GetData()[batch] - 1 : seq_length - 1);
+               size_t offset = seq * num_directions * batch_size * fHiddenSize +
+                  direction * batch_size * fHiddenSize + batch * fHiddenSize;
+               size_t y_c_offset = batch * num_directions * fHiddenSize +
+                  direction * fHiddenSize;
+               std::copy(cell_state + offset, hidden_state + offset + fHiddenSize,
+                  Y_c.GetData() + y_c_offset);
+            }
+         }
+      }
+   }
 
    if (bias)
       delete[] bias;
 
    if (fLayout == 1) {
       delete[] input;
-      if (Y.GetShape().size() > 0)
+      delete[] initial_hidden_state;
+      delete[] initial_cell_state;
+      if (Y.GetShape().size() == 0)
          delete[] hidden_state;
    }
 }
