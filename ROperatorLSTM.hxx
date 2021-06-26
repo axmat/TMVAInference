@@ -87,7 +87,7 @@ void ROperatorLSTM<T>::Forward_blas(RTensor<T> &X,
       throw
          std::runtime_error("TMVA SOFIE - Invalid fDirection = " + fDirection);
    }
-   if (fHiddenSize != W.GetShape()[1]) {
+   if (4*fHiddenSize != W.GetShape()[1]) {
       throw std::runtime_error(
          "TMVA SOFIE - fHiddenSize must be equal to " + std::to_string(W.GetShape()[1]));
    }
@@ -129,10 +129,10 @@ void ROperatorLSTM<T>::Forward_blas(RTensor<T> &X,
       for (size_t gate = 0; gate < 4; gate++) {
          T sum[fHiddenSize];
          for (size_t direction = 0; direction < num_directions; direction++) {
-            // Compute the bias_xh + bias_hh
+            // Compute the sum of the gate-hidden bias and the hidden-hidden bias
+            size_t offset = direction * 8 * fHiddenSize + gate * 2 * fHiddenSize;
             for (size_t h = 0; h < fHiddenSize; h++) {
-               sum[h] = B.GetData()[direction * 8 * fHiddenSize + gate * fHiddenSize + h] +
-                  B.GetData()[direction * 8 * fHiddenSize + gate * fHiddenSize + h + 4*fHiddenSize];
+               sum[h] = B.GetData()[offset + h] + B.GetData()[offset + h + fHiddenSize];
             }
             // Copy sum into bias
             for (size_t seq = 0; seq < seq_length; seq++) {
@@ -142,6 +142,21 @@ void ROperatorLSTM<T>::Forward_blas(RTensor<T> &X,
                      + seq * batch_size * fHiddenSize + batch * fHiddenSize;
                   std::copy(sum, sum + fHiddenSize, bias + bias_offset);
                }
+            }
+         }
+      }
+   }
+   // Broadcasting the weight for peepholes
+   T* peephole = nullptr;
+   if (P.GetShape().size() > 0) {
+      peephole = new T[num_directions * 3 * fHiddenSize * fHiddenSize];
+      for (size_t direction = 0; direction < num_directions; direction++) {
+         for (size_t gate = 0; gate < 3; gate++) {
+            for (size_t h = 0; h < fHiddenSize; h++) {
+               size_t p_offset = direction * 3 * fHiddenSize + gate * fHiddenSize;
+               size_t offset = direction * 3 * fHiddenSize * fHiddenSize +
+                  gate * fHiddenSize * fHiddenSize + h * fHiddenSize;
+               std::copy(P.GetData() + p_offset, P.GetData() + p_offset + fHiddenSize, peephole + offset);
             }
          }
       }
@@ -198,6 +213,7 @@ void ROperatorLSTM<T>::Forward_blas(RTensor<T> &X,
    T* gates[4] = {input_gate, forget_gate, output_gate, cell_gate};
    // Set the cell state
    T cell_state[hidden_state_size];
+   // new cell state = h(cell_state)
    T new_cell_state[hidden_state_size];
    // Set the hidden state
    T * hidden_state = nullptr;
@@ -246,7 +262,7 @@ void ROperatorLSTM<T>::Forward_blas(RTensor<T> &X,
       for (size_t seq = 0; seq < seq_length; seq++) {
          size_t index = backward ? seq_length - 1 - seq : seq;
          char transA = 'N';
-         char transB = 'N';
+         char transB = 'T';
          int m = batch_size;
          int n = fHiddenSize;
          float alpha = 1.;
@@ -272,36 +288,7 @@ void ROperatorLSTM<T>::Forward_blas(RTensor<T> &X,
                size_t previous_offset = (backward ? (index + 1) : (seq - 1)) * num_directions * batch_size *
                   fHiddenSize + direction * batch_size * fHiddenSize;
                BLAS::sgemm_(&transB, &transA, &n, &m, &n, &alpha, R.GetData() + r_offset, &n,
-                  gates[gate] + previous_offset, &n, &alpha, gates[gate] + offset, &n);
-            }
-         }
-         // TODO Peepholes LSTM
-         for (size_t gate = 0; gate < 3; gate++) {
-            // Clip the elements of the input gate, the forget gate and the output gate into the range [-fClip, fClip]
-            if (fClip > 0.) {
-               for (size_t i = offset; i < offset + size; i++) {
-                  T x = (gates[gate][i] > -fClip) ? gates[gate][i] : -fClip;
-                  gates[gate][i] = (x < fClip)? x : fClip;
-               }
-            }
-            // Apply the activation function to the input gate, the forget gate and the output gate
-            if (fActivations[direction * 3] == "Relu") {
-               for (size_t i = offset; i < offset + size; i++) {
-                  if (gates[gate][i] < 0.)
-                     gates[gate][i] = 0.;
-               }
-            } else if (fActivations[direction * 3] == "Tanh") {
-               for (size_t i = offset; i < offset + size; i++) {
-                  float ex = exp(-2 * gates[gate][i]);
-                  gates[gate][i] = (1. - ex) / (1. + ex);
-               }
-            } else if (fActivations[direction * 3] == "Sigmoid") {
-               for (size_t i = offset; i < offset + size; i++) {
-                  gates[gate][i] = 1. / (1. + exp(-gates[gate][i]));
-               }
-            } else {
-               throw std::runtime_error("TMVA - Activation function " + fActivations[direction * 3] +
-                  " not implemented.");
+                  hidden_state + previous_offset, &n, &alpha, gates[gate] + offset, &n);
             }
          }
          // Clip the elements of the cell gate into the range [-fClip, fClip]
@@ -330,24 +317,81 @@ void ROperatorLSTM<T>::Forward_blas(RTensor<T> &X,
             throw std::runtime_error("TMVA - Activation function " + fActivations[direction * 3 + 1] +
                " not implemented.");
          }
+         // Peephole connections for the input gate and the forget gate
+         for (size_t gate = 0; gate < 2; gate++) {
+            if (gate == 1 && fInputForget == 1)
+               continue;
+            // gate = 1.0 * gate + previous_cell_state * P^T
+            if (seq == 0) {
+               if (initial_cell_state) {
+                  size_t p_offset = direction * 4 * fHiddenSize * fHiddenSize +
+                     gate * fHiddenSize * fHiddenSize;
+                  size_t initial_c_offset = direction * batch_size * fHiddenSize;
+                  BLAS::sgemm_(&transB, &transA, &n, &m, &n, &alpha, P.GetData() + p_offset, &n,
+                     initial_cell_state + initial_c_offset, &n, &alpha,
+                     gates[gate] + offset, &n);
+               }
+            } else {
+               size_t p_offset = direction * 4 * fHiddenSize * fHiddenSize +
+                  gate * fHiddenSize * fHiddenSize;
+               size_t previous_offset = (backward ? (index + 1) : (seq - 1)) * num_directions * batch_size *
+                  fHiddenSize + direction * batch_size * fHiddenSize;
+               BLAS::sgemm_(&transB, &transA, &n, &m, &n, &alpha, P.GetData() + p_offset, &n,
+                  cell_state + previous_offset, &n, &alpha, gates[gate] + offset, &n);
+            }
+            // Clip the elements of the input gate and the forget gate into the range [-fClip, fClip]
+            if (fClip > 0.) {
+               for (size_t i = offset; i < offset + size; i++) {
+                  T x = (gates[gate][i] > -fClip) ? gates[gate][i] : -fClip;
+                  gates[gate][i] = (x < fClip)? x : fClip;
+               }
+            }
+            // Apply the activation function to the input gate and the forget gate
+            if (fActivations[direction * 3] == "Relu") {
+               for (size_t i = offset; i < offset + size; i++) {
+                  if (gates[gate][i] < 0.)
+                     gates[gate][i] = 0.;
+               }
+            } else if (fActivations[direction * 3] == "Tanh") {
+               for (size_t i = offset; i < offset + size; i++) {
+                  float ex = exp(-2 * gates[gate][i]);
+                  gates[gate][i] = (1. - ex) / (1. + ex);
+               }
+            } else if (fActivations[direction * 3] == "Sigmoid") {
+               for (size_t i = offset; i < offset + size; i++) {
+                  gates[gate][i] = 1. / (1. + exp(-gates[gate][i]));
+               }
+            } else {
+               throw std::runtime_error("TMVA - Activation function " + fActivations[direction * 3] +
+                  " not implemented.");
+            }
+         }
          // cell_state = input_gate o cell_gate
          for (size_t i = offset; i < offset + size; i++) {
             cell_state[i] = input_gate[i] * cell_gate[i];
          }
          if (fInputForget == 0) {
             if (seq == 0) {
-               // cell_state += forget_gate o initial_cell_state
-               for (size_t i = offset; i < offset + size; i++) {
-                  cell_state[i] += forget_gate[i] * initial_cell_state[i];
+               if (initial_cell_state) {
+                  // cell_state += forget_gate o initial_cell_state
+                  for (size_t i = offset; i < offset + size; i++) {
+                     cell_state[i] += forget_gate[i] * initial_cell_state[i];
+                  }
                }
             } else {
                // cell_state += forget_gate o previous_cell_state
-               size_t previous_offset;
+               size_t previous_offset = (backward ? (index + 1) : (seq - 1)) * num_directions * batch_size *
+                  fHiddenSize + direction * batch_size * fHiddenSize;
                for (size_t i = 0; i < size; i++) {
                   cell_state[i + offset] += forget_gate[i + offset] * cell_state[i + previous_offset];
                }
             }
          }
+         // Peephole connection for the output gate
+         size_t p_offset = direction * 4 * fHiddenSize * fHiddenSize +
+            2 * fHiddenSize * fHiddenSize;
+         BLAS::sgemm_(&transB, &transA, &n, &m, &n, &alpha, P.GetData() + p_offset, &n,
+               cell_state + offset, &n, &alpha, output_gate + offset, &n);
          // copy cell_state into new_cell_state
          std::copy(cell_state + offset, cell_state + offset + size, new_cell_state + offset);
          // Clip the elements of new_cell_state into the range [-fClip, fClip]
@@ -401,6 +445,7 @@ void ROperatorLSTM<T>::Forward_blas(RTensor<T> &X,
       }
    }
 
+   /*
    // copy hidden_state into Y and Y_h, and copy cell_state into Y_c
    if (fLayout == 0) {
       if (Y_h.GetShape().size() > 0) {
@@ -504,10 +549,13 @@ void ROperatorLSTM<T>::Forward_blas(RTensor<T> &X,
             }
          }
       }
-   }
+   }*/
 
    if (bias)
       delete[] bias;
+
+   if (fInputForget == 0)
+      delete[] forget_gate;
 
    if (fLayout == 1) {
       delete[] input;
