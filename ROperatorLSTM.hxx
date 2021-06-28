@@ -445,7 +445,6 @@ void ROperatorLSTM<T>::Forward_blas(RTensor<T> &X,
       }
    }
 
-   /*
    // copy hidden_state into Y and Y_h, and copy cell_state into Y_c
    if (fLayout == 0) {
       if (Y_h.GetShape().size() > 0) {
@@ -499,7 +498,7 @@ void ROperatorLSTM<T>::Forward_blas(RTensor<T> &X,
                   direction * batch_size * fHiddenSize;
                size_t size = batch_size * fHiddenSize;
                size_t y_c_offset = direction * batch_size * fHiddenSize;
-               std::copy(cell_state + offset, hidden_state + offset + size,
+               std::copy(cell_state + offset, cell_state + offset + size,
                   Y_c.GetData() + y_c_offset);
             }
          }
@@ -544,12 +543,12 @@ void ROperatorLSTM<T>::Forward_blas(RTensor<T> &X,
                   direction * batch_size * fHiddenSize + batch * fHiddenSize;
                size_t y_c_offset = batch * num_directions * fHiddenSize +
                   direction * fHiddenSize;
-               std::copy(cell_state + offset, hidden_state + offset + fHiddenSize,
+               std::copy(cell_state + offset, cell_state + offset + fHiddenSize,
                   Y_c.GetData() + y_c_offset);
             }
          }
       }
-   }*/
+   }
 
    if (bias)
       delete[] bias;
