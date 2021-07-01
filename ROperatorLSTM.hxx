@@ -149,19 +149,23 @@ void ROperatorLSTM<T>::Forward_blas(RTensor<T> &X,
    // Broadcasting the weight for peepholes
    T* peephole = nullptr;
    if (P.GetShape().size() > 0) {
-      peephole = new T[num_directions * 3 * fHiddenSize * fHiddenSize];
-      for (size_t direction = 0; direction < num_directions; direction++) {
-         for (size_t gate = 0; gate < 3; gate++) {
-            for (size_t h = 0; h < fHiddenSize; h++) {
+      if (batch_size == 1) {
+         peephole = P.GetData();
+      } else {
+         peephole = new T[num_directions * 3 * batch_size * fHiddenSize];
+         for (size_t direction = 0; direction < num_directions; direction++) {
+            for (size_t gate = 0; gate < 3; gate++) {
                size_t p_offset = direction * 3 * fHiddenSize + gate * fHiddenSize;
-               size_t offset = direction * 3 * fHiddenSize * fHiddenSize +
-                  gate * fHiddenSize * fHiddenSize + h * fHiddenSize;
-               std::copy(P.GetData() + p_offset, P.GetData() + p_offset + fHiddenSize, peephole + offset);
+               for (size_t batch = 0; batch < batch_size; batch++) {
+                  size_t offset = direction * 3 * batch_size * fHiddenSize +
+                     gate * batch_size * fHiddenSize + batch * fHiddenSize;
+                  std::copy(P.GetData() + p_offset, P.GetData() + p_offset + fHiddenSize,
+                     peephole + offset);
+               }
             }
          }
       }
    }
-
    // Set the initial hidden state
    T* initial_hidden_state = nullptr;
    if (initial_h.GetShape().size() > 0) {
@@ -383,29 +387,32 @@ void ROperatorLSTM<T>::Forward_blas(RTensor<T> &X,
             // gate = 1.0 * gate + previous_cell_state * P^T
             if (seq == 0) {
                if (initial_cell_state) {
-                  size_t pi_offset = direction * 4 * fHiddenSize * fHiddenSize;
+                  size_t pi_offset = direction * 3 * batch_size * fHiddenSize;
                   size_t initial_c_offset = direction * batch_size * fHiddenSize;
-                  BLAS::sgemm_(&transB, &transA, &n, &m, &n, &alpha, P.GetData() + pi_offset, &n,
-                     initial_cell_state + initial_c_offset, &n, &alpha, input_gate + offset, &n);
+                  for (size_t i = 0; i < size; i++) {
+                     input_gate[i + offset] += peephole[i + pi_offset] * initial_cell_state[i + initial_c_offset];
+                  }
                   if (fInputForget == 0) {
-                     size_t pf_offset = direction * 4 * fHiddenSize * fHiddenSize +
-                        fHiddenSize * fHiddenSize;
-                     BLAS::sgemm_(&transB, &transA, &n, &m, &n, &alpha, P.GetData() + pf_offset, &n,
-                        initial_cell_state + initial_c_offset, &n, &alpha,
-                        forget_gate + offset, &n);
+                     size_t pf_offset = direction * 3 * batch_size * fHiddenSize +
+                        batch_size * fHiddenSize;
+                     for (size_t i = 0; i < size; i++) {
+                        forget_gate[i + offset] += peephole[i + pf_offset] * initial_cell_state[i + initial_c_offset];
+                     }
                   }
                }
             } else {
-               size_t pi_offset = direction * 4 * fHiddenSize * fHiddenSize;
-               size_t previous_offset = (backward ? (index + 1) : (seq - 1)) * num_directions * batch_size *
+               size_t pi_offset = direction * 3 * batch_size * fHiddenSize;
+               size_t c_offset = (backward ? (index + 1) : (seq - 1)) * num_directions * batch_size *
                   fHiddenSize + direction * batch_size * fHiddenSize;
-               BLAS::sgemm_(&transB, &transA, &n, &m, &n, &alpha, P.GetData() + pi_offset, &n,
-                  cell_state + previous_offset, &n, &alpha, input_gate + offset, &n);
+               for (size_t i = 0; i < size; i++) {
+                  input_gate[i + offset] += peephole[i + pi_offset] * cell_state[i + c_offset];
+               }
                if (fInputForget == 0) {
-                  size_t pf_offset = direction * 4 * fHiddenSize * fHiddenSize +
-                     fHiddenSize * fHiddenSize;
-                  BLAS::sgemm_(&transB, &transA, &n, &m, &n, &alpha, P.GetData() + pf_offset, &n,
-                     cell_state + previous_offset, &n, &alpha, forget_gate + offset, &n);
+                  size_t pf_offset = direction * 3 * batch_size * fHiddenSize +
+                     batch_size * fHiddenSize;
+                  for (size_t i = 0; i < size; i++) {
+                     forget_gate[i + offset] += peephole[i + pf_offset] * cell_state[i + c_offset];
+                  }
                }
             }
          }
@@ -486,10 +493,11 @@ void ROperatorLSTM<T>::Forward_blas(RTensor<T> &X,
          }
          if (peephole) {
             // Peephole connection for the output gate
-            size_t p_offset = direction * 4 * fHiddenSize * fHiddenSize +
-               2 * fHiddenSize * fHiddenSize;
-            BLAS::sgemm_(&transB, &transA, &n, &m, &n, &alpha, P.GetData() + p_offset, &n,
-               cell_state + offset, &n, &alpha, output_gate + offset, &n);
+            size_t p_offset = direction * 3 * batch_size * fHiddenSize +
+               2 * batch_size * fHiddenSize;
+            for (size_t i = 0; i < size; i++) {
+               output_gate[i + offset] += peephole[i + p_offset] * cell_state[i + offset];
+            }
          }
          // Clip the elements of the output gate into the range [-fClip, fClip]
          if (fClip > 0.) {
@@ -690,6 +698,8 @@ void ROperatorLSTM<T>::Forward_blas(RTensor<T> &X,
       if (Y.GetShape().size() == 0)
          delete[] hidden_state;
    }
+   if (peephole && batch_size > 1)
+      delete[] peephole;
 }
 
 
