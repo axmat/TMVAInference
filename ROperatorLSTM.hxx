@@ -130,9 +130,9 @@ void ROperatorLSTM<T>::Forward_blas(RTensor<T> &X,
          T sum[fHiddenSize];
          for (size_t direction = 0; direction < num_directions; direction++) {
             // Compute the sum of the gate-hidden bias and the hidden-hidden bias
-            size_t offset = direction * 8 * fHiddenSize + gate * 2 * fHiddenSize;
+            size_t offset = direction * 8 * fHiddenSize + gate * fHiddenSize;
             for (size_t h = 0; h < fHiddenSize; h++) {
-               sum[h] = B.GetData()[offset + h] + B.GetData()[offset + h + fHiddenSize];
+               sum[h] = B.GetData()[offset + h] + B.GetData()[offset + h + 4 * fHiddenSize];
             }
             // Copy sum into bias
             for (size_t seq = 0; seq < seq_length; seq++) {
