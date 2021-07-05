@@ -4,6 +4,7 @@
 
 #include "testROperatorConv.hxx"
 #include "testROperatorRNN.hxx"
+#include "testROperatorLSTM.hxx"
 
 int main(int argc, char *argv[]) {
    if (argc != 2) {
@@ -27,6 +28,12 @@ int main(int argc, char *argv[]) {
    } else if (operator_name == "RNN") {
       std::cout << "-----------------------------------------------------------------" << std::endl;
       failed |= testROperatorRNN<float>(1.E-3);
+      std::cout << (failed? "Test Failed" : "Test Passed" ) << std::endl;
+
+      return failed;
+   } else if (operator_name == "LSTM") {
+      std::cout << "-----------------------------------------------------------------" << std::endl;
+      failed |= testROperatorLSTM<float>(1.E-3);
       std::cout << (failed? "Test Failed" : "Test Passed" ) << std::endl;
 
       return failed;
