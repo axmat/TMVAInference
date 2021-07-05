@@ -305,11 +305,7 @@ void ROperatorLSTM<T>::Forward_blas(RTensor<T> &X,
       bool backward = (fDirection == "backward") || (direction == 1);
       for (size_t seq = 0; seq < seq_length; seq++) {
          size_t index = backward ? seq_length - 1 - seq : seq;
-         char transA = 'N';
-         char transB = 'T';
          int m = batch_size;
-         int n = fHiddenSize;
-         float alpha = 1.;
          size_t offset = index * num_directions * batch_size * fHiddenSize
             + direction * batch_size * fHiddenSize;
          size_t size = batch_size * fHiddenSize;
@@ -378,9 +374,48 @@ void ROperatorLSTM<T>::Forward_blas(RTensor<T> &X,
             for (size_t i = offset; i < offset + size; i++) {
                cell_gate[i] = 1. / (1. + exp(-cell_gate[i]));
             }
-         } else {
-            throw std::runtime_error("TMVA - Activation function " + fActivations[direction * 3 + 1] +
-               " not implemented.");
+         } else if (fActivations[direction * 3 + 1] == "Affine") {
+            for (size_t i = offset; i < offset + size; i++) {
+               cell_gate[i] = fActivationAlpha[direction * 3 + 1] * cell_gate[i]
+                  + fActivationBeta[direction * 3 + 1];
+            }
+         } else if (fActivations[direction * 3 + 1] == "LeakyRelu") {
+            for (size_t i = offset; i < offset + size; i++) {
+               if (cell_gate[i] < 0.) {
+                  cell_gate[i] = fActivationAlpha[direction * 3 + 1] * cell_gate[i];
+               }
+            }
+         } else if (fActivations[direction * 3 + 1] == "ThresholdRelu") {
+            for (size_t i = offset; i < offset + size; i++) {
+               if (cell_gate[i] < fActivationAlpha[direction * 3 + 1]) {
+                  cell_gate[i] = 0.;
+               }
+            }
+         } else if (fActivations[direction * 3 + 1] == "ScaledTanh") {
+            for (size_t i = offset; i < offset + size; i++) {
+               float x = exp(-2 * fActivationBeta[direction * 3 + 1] * cell_gate[i]);
+               cell_gate[i] = fActivationAlpha[direction * 3 + 1] * (1. - x) / (1. + x);
+            }
+         } else if (fActivations[direction * 3 + 1] == "HardSigmoid") {
+            for (size_t i = offset; i < offset + size; i++) {
+               float a = fActivationAlpha[direction * 3 + 1] * cell_gate[i] + fActivationBeta[direction * 3 + 1];
+               float b = (a > 0.) ? a : 0.;
+               cell_gate[i] = (b < 1.) ? b : 1.;
+            }
+         } else if (fActivations[direction * 3 + 1] == "Elu") {
+            for (size_t i = offset; i < offset + size; i++) {
+               if (cell_gate[i] < 0.) {
+                  cell_gate[i] = fActivationAlpha[direction * 3 + 1] * (exp(cell_gate[i] - 1.));
+               }
+            }
+         } else if (fActivations[direction * 3 + 1] == "Softsign") {
+            for (size_t i = offset; i < offset + size; i++) {
+               cell_gate[i] = cell_gate[i] / (1. + abs(new_cell_state[i]));
+            }
+         } else { // Softplus
+            for (size_t i = offset; i < offset + size; i++) {
+               cell_gate[i] = log(1. + exp(cell_gate[i]));
+            }
          }
          // Peephole connections for the input gate and the forget gate
          if (peephole) {
@@ -438,10 +473,50 @@ void ROperatorLSTM<T>::Forward_blas(RTensor<T> &X,
             for (size_t i = offset; i < offset + size; i++) {
                input_gate[i] = 1. / (1. + exp(-input_gate[i]));
             }
-         } else {
-            throw std::runtime_error("TMVA - Activation function " + fActivations[direction * 3] +
-               " not implemented.");
+         } else if (fActivations[direction * 3] == "Affine") {
+            for (size_t i = offset; i < offset + size; i++) {
+               input_gate[i] = fActivationAlpha[direction * 3] * input_gate[i]
+                  + fActivationBeta[direction * 3];
+            }
+         } else if (fActivations[direction * 3] == "LeakyRelu") {
+            for (size_t i = offset; i < offset + size; i++) {
+               if (input_gate[i] < 0.) {
+                  input_gate[i] = fActivationAlpha[direction * 3] * input_gate[i];
+               }
+            }
+         } else if (fActivations[direction * 3] == "ThresholdRelu") {
+            for (size_t i = offset; i < offset + size; i++) {
+               if (input_gate[i] < fActivationAlpha[direction * 3]) {
+                  input_gate[i] = 0.;
+               }
+            }
+         } else if (fActivations[direction * 3] == "ScaledTanh") {
+            for (size_t i = offset; i < offset + size; i++) {
+               float x = exp(-2 * fActivationBeta[direction * 3] * input_gate[i]);
+               input_gate[i] = fActivationAlpha[direction * 3] * (1. - x) / (1. + x);
+            }
+         } else if (fActivations[direction * 3] == "HardSigmoid") {
+            for (size_t i = offset; i < offset + size; i++) {
+               float a = fActivationAlpha[direction * 3] * input_gate[i] + fActivationBeta[direction * 3];
+               float b = (a > 0.) ? a : 0.;
+               input_gate[i] = (b < 1.) ? b : 1.;
+            }
+         } else if (fActivations[direction * 3] == "Elu") {
+            for (size_t i = offset; i < offset + size; i++) {
+               if (input_gate[i] < 0.) {
+                  input_gate[i] = fActivationAlpha[direction * 3] * (exp(input_gate[i] - 1.));
+               }
+            }
+         } else if (fActivations[direction * 3] == "Softsign") {
+            for (size_t i = offset; i < offset + size; i++) {
+               input_gate[i] = input_gate[i] / (1. + abs(new_cell_state[i]));
+            }
+         } else { // Softplus
+            for (size_t i = offset; i < offset + size; i++) {
+               input_gate[i] = log(1. + exp(input_gate[i]));
+            }
          }
+
          if (fInputForget == 0) {
             // Clip the elements of the forget gate into the range [-fClip, fClip]
             if (fClip > 0.) {
@@ -465,9 +540,48 @@ void ROperatorLSTM<T>::Forward_blas(RTensor<T> &X,
                for (size_t i = offset; i < offset + size; i++) {
                   forget_gate[i] = 1. / (1. + exp(-forget_gate[i]));
                }
-            } else {
-               throw std::runtime_error("TMVA - Activation function " + fActivations[direction * 3] +
-                  " not implemented.");
+            } else if (fActivations[direction * 3] == "Affine") {
+               for (size_t i = offset; i < offset + size; i++) {
+                  forget_gate[i] = fActivationAlpha[direction * 3] * forget_gate[i]
+                     + fActivationBeta[direction * 3];
+               }
+            } else if (fActivations[direction * 3] == "LeakyRelu") {
+               for (size_t i = offset; i < offset + size; i++) {
+                  if (forget_gate[i] < 0.) {
+                     forget_gate[i] = fActivationAlpha[direction * 3] * forget_gate[i];
+                  }
+               }
+            } else if (fActivations[direction * 3] == "ThresholdRelu") {
+               for (size_t i = offset; i < offset + size; i++) {
+                  if (forget_gate[i] < fActivationAlpha[direction * 3]) {
+                     forget_gate[i] = 0.;
+                  }
+               }
+            } else if (fActivations[direction * 3] == "ScaledTanh") {
+               for (size_t i = offset; i < offset + size; i++) {
+                  float x = exp(-2 * fActivationBeta[direction * 3] * forget_gate[i]);
+                  forget_gate[i] = fActivationAlpha[direction * 3] * (1. - x) / (1. + x);
+               }
+            } else if (fActivations[direction * 3] == "HardSigmoid") {
+               for (size_t i = offset; i < offset + size; i++) {
+                  float a = fActivationAlpha[direction * 3] * forget_gate[i] + fActivationBeta[direction * 3];
+                  float b = (a > 0.) ? a : 0.;
+                  forget_gate[i] = (b < 1.) ? b : 1.;
+               }
+            } else if (fActivations[direction * 3] == "Elu") {
+               for (size_t i = offset; i < offset + size; i++) {
+                  if (forget_gate[i] < 0.) {
+                     forget_gate[i] = fActivationAlpha[direction * 3] * (exp(forget_gate[i] - 1.));
+                  }
+               }
+            } else if (fActivations[direction * 3] == "Softsign") {
+               for (size_t i = offset; i < offset + size; i++) {
+                  forget_gate[i] = forget_gate[i] / (1. + abs(new_cell_state[i]));
+               }
+            } else { // Softplus
+               for (size_t i = offset; i < offset + size; i++) {
+                  forget_gate[i] = log(1. + exp(forget_gate[i]));
+               }
             }
          }
          // cell_state = input_gate o cell_gate
@@ -521,9 +635,48 @@ void ROperatorLSTM<T>::Forward_blas(RTensor<T> &X,
             for (size_t i = offset; i < offset + size; i++) {
                output_gate[i] = 1. / (1. + exp(-output_gate[i]));
             }
-         } else {
-            throw std::runtime_error("TMVA - Activation function " + fActivations[direction * 3] +
-               " not implemented.");
+         } else if (fActivations[direction * 3] == "Affine") {
+            for (size_t i = offset; i < offset + size; i++) {
+               output_gate[i] = fActivationAlpha[direction * 3] * output_gate[i]
+                  + fActivationBeta[direction * 3];
+            }
+         } else if (fActivations[direction * 3] == "LeakyRelu") {
+            for (size_t i = offset; i < offset + size; i++) {
+               if (output_gate[i] < 0.) {
+                  output_gate[i] = fActivationAlpha[direction * 3] * output_gate[i];
+               }
+            }
+         } else if (fActivations[direction * 3] == "ThresholdRelu") {
+            for (size_t i = offset; i < offset + size; i++) {
+               if (output_gate[i] < fActivationAlpha[direction * 3]) {
+                  output_gate[i] = 0.;
+               }
+            }
+         } else if (fActivations[direction * 3] == "ScaledTanh") {
+            for (size_t i = offset; i < offset + size; i++) {
+               float x = exp(-2 * fActivationBeta[direction * 3] * output_gate[i]);
+               output_gate[i] = fActivationAlpha[direction * 3] * (1. - x) / (1. + x);
+            }
+         } else if (fActivations[direction * 3] == "HardSigmoid") {
+            for (size_t i = offset; i < offset + size; i++) {
+               float a = fActivationAlpha[direction * 3] * output_gate[i] + fActivationBeta[direction * 3];
+               float b = (a > 0.) ? a : 0.;
+               output_gate[i] = (b < 1.) ? b : 1.;
+            }
+         } else if (fActivations[direction * 3] == "Elu") {
+            for (size_t i = offset; i < offset + size; i++) {
+               if (output_gate[i] < 0.) {
+                  output_gate[i] = fActivationAlpha[direction * 3] * (exp(output_gate[i] - 1.));
+               }
+            }
+         } else if (fActivations[direction * 3] == "Softsign") {
+            for (size_t i = offset; i < offset + size; i++) {
+               output_gate[i] = output_gate[i] / (1. + abs(new_cell_state[i]));
+            }
+         } else { // Softplus
+            for (size_t i = offset; i < offset + size; i++) {
+               output_gate[i] = log(1. + exp(output_gate[i]));
+            }
          }
          // copy cell_state into new_cell_state
          std::copy(cell_state + offset, cell_state + offset + size, new_cell_state + offset);
@@ -549,9 +702,48 @@ void ROperatorLSTM<T>::Forward_blas(RTensor<T> &X,
             for (size_t i = offset; i < offset + size; i++) {
                new_cell_state[i] = 1. / (1. + exp(-new_cell_state[i]));
             }
-         } else {
-            throw std::runtime_error("TMVA - Activation function " + fActivations[direction * 3 + 2] +
-               " not implemented.");
+         } else if (fActivations[direction * 3 + 2] == "Affine") {
+            for (size_t i = offset; i < offset + size; i++) {
+               new_cell_state[i] = fActivationAlpha[direction * 3 + 2] * new_cell_state[i]
+                  + fActivationBeta[direction * 3 + 2];
+            }
+         } else if (fActivations[direction * 3 + 2] == "LeakyRelu") {
+            for (size_t i = offset; i < offset + size; i++) {
+               if (new_cell_state[i] < 0.) {
+                  new_cell_state[i] = fActivationAlpha[direction * 3 + 2] * new_cell_state[i];
+               }
+            }
+         } else if (fActivations[direction * 3 + 2] == "ThresholdRelu") {
+            for (size_t i = offset; i < offset + size; i++) {
+               if (new_cell_state[i] < fActivationAlpha[direction * 3 + 2]) {
+                  new_cell_state[i] = 0.;
+               }
+            }
+         } else if (fActivations[direction * 3 + 2] == "ScaledTanh") {
+            for (size_t i = offset; i < offset + size; i++) {
+               float x = exp(-2 * fActivationBeta[direction * 3 + 2] * new_cell_state[i]);
+               new_cell_state[i] = fActivationAlpha[direction * 3 + 2] * (1. - x) / (1. + x);
+            }
+         } else if (fActivations[direction * 3 + 2] == "HardSigmoid") {
+            for (size_t i = offset; i < offset + size; i++) {
+               float a = fActivationAlpha[direction * 3 + 2] * new_cell_state[i] + fActivationBeta[direction * 3 + 2];
+               float b = (a > 0.) ? a : 0.;
+               new_cell_state[i] = (b < 1.) ? b : 1.;
+            }
+         } else if (fActivations[direction * 3 + 2] == "Elu") {
+            for (size_t i = offset; i < offset + size; i++) {
+               if (new_cell_state[i] < 0.) {
+                  new_cell_state[i] = fActivationAlpha[direction * 3 + 2] * (exp(new_cell_state[i] - 1.));
+               }
+            }
+         } else if (fActivations[direction * 3 + 2] == "Softsign") {
+            for (size_t i = offset; i < offset + size; i++) {
+               new_cell_state[i] = new_cell_state[i] / (1. + abs(new_cell_state[i]));
+            }
+         } else { // Softplus
+            for (size_t i = offset; i < offset + size; i++) {
+               new_cell_state[i] = log(1. + exp(new_cell_state[i]));
+            }
          }
          // hidden_state = output_gate o new_cell_state
          for (size_t i = offset; i < offset + size; i++) {
