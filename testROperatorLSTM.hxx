@@ -22,6 +22,9 @@ template<typename T>
 bool testROperatorLSTM_batchwise(double tol);
 
 template<typename T>
+bool testROperatorLSTM_bidirectional(double tol);
+
+template<typename T>
 bool testROperatorLSTM(double tol) {
    bool failed = false;
 
@@ -29,6 +32,7 @@ bool testROperatorLSTM(double tol) {
    failed |= testROperatorLSTM_initial_bias<T>(tol);
    failed |= testROperatorLSTM_peepholes<T>(tol);
    failed |= testROperatorLSTM_batchwise<T>(tol);
+   failed |= testROperatorLSTM_bidirectional<T>(tol);
 
    return failed;
 }
@@ -251,5 +255,67 @@ bool testROperatorLSTM_batchwise(double tol) {
    std::cout << (failed? "Failed" : "Passed") << std::endl;
    return failed;
 }
+
+template<typename T>
+bool testROperatorLSTM_bidirectional(double tol) {
+   using namespace TMVA::Experimental;
+   using TMVA::Experimental::SOFIE::ROperatorLSTM;
+   const size_t seq_length = 3;
+   const size_t batch_size = 1;
+   const size_t input_size = 2;
+   const size_t hidden_size = 3;
+   const size_t num_directions = 2;
+
+   RTensor<T> x({seq_length, batch_size, input_size});
+   std::iota(x.begin(), x.end(), 1.);
+
+   RTensor<T> w({num_directions, 4*hidden_size, input_size});
+   std::fill(w.begin(), w.end(), 0.1);
+
+   RTensor<T> b({});
+
+   RTensor<T> r({num_directions, 4*hidden_size, hidden_size});
+   std::fill(r.begin(), r.end(), 0.1);
+
+   RTensor<size_t> sequance_lens({});
+
+   RTensor<T> initial_h({});
+
+   RTensor<T> initial_c({});
+
+   RTensor<T> p({});
+
+   RTensor<T> y({seq_length, num_directions, batch_size, hidden_size});
+   RTensor<T> y_h({num_directions, batch_size, hidden_size});
+   RTensor<T> y_c({num_directions, batch_size, hidden_size});
+
+   T true_y_data[seq_length * num_directions * batch_size * hidden_size] = {
+      0.0952, 0.0952, 0.0952,
+      0.4041, 0.4041, 0.4041,
+      0.3287, 0.3287, 0.3287,
+      0.4927, 0.4927, 0.4927,
+      0.6004, 0.6004, 0.6004,
+      0.4032, 0.4032, 0.4032};
+   RTensor<T> true_y(true_y_data, {seq_length, num_directions, batch_size, hidden_size});
+
+   T true_y_h_data[num_directions * batch_size * hidden_size] = {
+      0.6004, 0.6004, 0.6004,
+      0.4041, 0.4041, 0.4041};
+   RTensor<T> true_y_h(true_y_h_data, {num_directions, batch_size, hidden_size});
+
+   T true_y_c_data[num_directions * batch_size * hidden_size] = {
+      1.0493, 1.0493, 1.0493,
+      0.7970, 0.7970, 0.7970};
+   RTensor<T> true_y_c(true_y_c_data, {num_directions, batch_size, hidden_size});
+
+   ROperatorLSTM<T> lstm({{}, {}, {}, 0.0, "bidirectional", hidden_size, 0, 0});
+   lstm.Forward_blas(x, w, r, b, sequance_lens, initial_h, initial_c, p, y, y_h, y_c);
+
+   bool failed = !IsApprox(y, true_y, tol) || !IsApprox(y_h, true_y_h, tol) || !IsApprox(y_c, true_y_c, tol);
+   std::cout << "   LSTM bidirectional : Test ";
+   std::cout << (failed? "Failed" : "Passed") << std::endl;
+   return failed;
+}
+
 
 #endif

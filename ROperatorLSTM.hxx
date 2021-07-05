@@ -305,7 +305,7 @@ void ROperatorLSTM<T>::Forward_blas(RTensor<T> &X,
       bool backward = (fDirection == "backward") || (direction == 1);
       for (size_t seq = 0; seq < seq_length; seq++) {
          size_t index = backward ? seq_length - 1 - seq : seq;
-         int m = batch_size;
+         int m2 = batch_size;
          size_t offset = index * num_directions * batch_size * fHiddenSize
             + direction * batch_size * fHiddenSize;
          size_t size = batch_size * fHiddenSize;
@@ -314,20 +314,20 @@ void ROperatorLSTM<T>::Forward_blas(RTensor<T> &X,
             if (initial_hidden_state) {
                size_t initial_h_offset = direction * batch_size * fHiddenSize;
                size_t ri_offset = direction * 4 * fHiddenSize * fHiddenSize;
-               BLAS::sgemm_(&transB, &transA, &n, &m, &n, &alpha, R.GetData() + ri_offset, &n,
+               BLAS::sgemm_(&transB, &transA, &n, &m2, &n, &alpha, R.GetData() + ri_offset, &n,
                   initial_hidden_state + initial_h_offset, &n, &alpha, input_gate + offset, &n);
                size_t ro_offset = direction * 4 * fHiddenSize * fHiddenSize +
                   2 * fHiddenSize * fHiddenSize;
-               BLAS::sgemm_(&transB, &transA, &n, &m, &n, &alpha, R.GetData() + ro_offset, &n,
+               BLAS::sgemm_(&transB, &transA, &n, &m2, &n, &alpha, R.GetData() + ro_offset, &n,
                   initial_hidden_state + initial_h_offset, &n, &alpha, output_gate + offset, &n);
                size_t rc_offset = direction * 4 * fHiddenSize * fHiddenSize +
                   3 * fHiddenSize * fHiddenSize;
-               BLAS::sgemm_(&transB, &transA, &n, &m, &n, &alpha, R.GetData() + rc_offset, &n,
+               BLAS::sgemm_(&transB, &transA, &n, &m2, &n, &alpha, R.GetData() + rc_offset, &n,
                   initial_hidden_state + initial_h_offset, &n, &alpha, cell_gate + offset, &n);
                if (fInputForget == 0) {
                   size_t rf_offset = direction * 4 * fHiddenSize * fHiddenSize +
                      fHiddenSize * fHiddenSize;
-                  BLAS::sgemm_(&transB, &transA, &n, &m, &n, &alpha, R.GetData() + rf_offset, &n,
+                  BLAS::sgemm_(&transB, &transA, &n, &m2, &n, &alpha, R.GetData() + rf_offset, &n,
                      initial_hidden_state + initial_h_offset, &n, &alpha, forget_gate + offset, &n);
                }
             }
@@ -335,20 +335,20 @@ void ROperatorLSTM<T>::Forward_blas(RTensor<T> &X,
             size_t previous_offset = (backward ? (index + 1) : (seq - 1)) * num_directions * batch_size *
                fHiddenSize + direction * batch_size * fHiddenSize;
             size_t ri_offset = direction * 4 * fHiddenSize * fHiddenSize;
-            BLAS::sgemm_(&transB, &transA, &n, &m, &n, &alpha, R.GetData() + ri_offset, &n,
+            BLAS::sgemm_(&transB, &transA, &n, &m2, &n, &alpha, R.GetData() + ri_offset, &n,
                hidden_state + previous_offset, &n, &alpha, input_gate + offset, &n);
             size_t ro_offset = direction * 4 * fHiddenSize * fHiddenSize +
                2 * fHiddenSize * fHiddenSize;
-            BLAS::sgemm_(&transB, &transA, &n, &m, &n, &alpha, R.GetData() + ro_offset, &n,
+            BLAS::sgemm_(&transB, &transA, &n, &m2, &n, &alpha, R.GetData() + ro_offset, &n,
                hidden_state + previous_offset, &n, &alpha, output_gate + offset, &n);
             size_t rc_offset = direction * 4 * fHiddenSize * fHiddenSize +
                3 * fHiddenSize * fHiddenSize;
-            BLAS::sgemm_(&transB, &transA, &n, &m, &n, &alpha, R.GetData() + rc_offset, &n,
+            BLAS::sgemm_(&transB, &transA, &n, &m2, &n, &alpha, R.GetData() + rc_offset, &n,
                hidden_state + previous_offset, &n, &alpha, cell_gate + offset, &n);
             if (fInputForget == 0) {
                size_t rf_offset = direction * 4 * fHiddenSize * fHiddenSize +
                   fHiddenSize * fHiddenSize;
-               BLAS::sgemm_(&transB, &transA, &n, &m, &n, &alpha, R.GetData() + rf_offset, &n,
+               BLAS::sgemm_(&transB, &transA, &n, &m2, &n, &alpha, R.GetData() + rf_offset, &n,
                   hidden_state + previous_offset, &n, &alpha, forget_gate + offset, &n);
             }
          }
@@ -592,8 +592,8 @@ void ROperatorLSTM<T>::Forward_blas(RTensor<T> &X,
             if (seq == 0) {
                if (initial_cell_state) {
                   // cell_state += forget_gate o initial_cell_state
-                  for (size_t i = offset; i < offset + size; i++) {
-                     cell_state[i] += forget_gate[i] * initial_cell_state[i];
+                  for (size_t i = 0; i < size; i++) {
+                     cell_state[i + offset] += forget_gate[i + offset] * initial_cell_state[i];
                   }
                }
             } else {
