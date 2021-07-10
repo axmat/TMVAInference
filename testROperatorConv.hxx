@@ -1,11 +1,14 @@
-#ifndef TEST_OPERATOR_CONV
-#define TEST_OPERATOR_CONV
+#ifndef TEST_ROPERATOR_CONV
+#define TEST_ROPERATOR_CONV
 
 #include "TMVA/RTensor.hxx"
 #include "testROperator.hxx"
 #include "ROperatorConv.hxx"
 
 #include <sstream>
+
+template<typename T>
+bool testROperatorConv_autopad_same(double tol);
 
 template<typename T>
 bool testROperatorConvWithPadding(double tol);
@@ -32,6 +35,7 @@ template<typename T>
 bool testROperatorConv(double tol) {
    bool failed = false;
 
+   failed |= testROperatorConv_autopad_same<T>(tol);
    failed |= testROperatorConvWithPadding<T>(tol);
    failed |= testROperatorConvWithoutPadding<T>(tol);
    failed |= testROperatorConvStridesPadding<T>(tol);
@@ -40,6 +44,37 @@ bool testROperatorConv(double tol) {
    failed |= testROperatorConvBatch<T>(tol);
    failed |= testROperatorConvGrouped<T>(tol);
 
+   return failed;
+}
+
+template<typename T>
+bool testROperatorConv_autopad_same(double tol) {
+   using namespace TMVA::Experimental;
+   using TMVA::Experimental::SOFIE::ROperatorConv;
+
+   RTensor<T> X({1, 1, 5, 5});
+   std::iota(X.begin(), X.end(), 0.);
+
+   RTensor<T> W({1, 1, 3, 3});
+   std::fill(W.begin(), W.end(), 1.0);
+
+   RTensor<T> B({});
+
+   RTensor<T> Y({1, 1, 5, 5});
+   T data[9] = {12.,  27., 24.,
+                 63., 108., 81.,
+                 72., 117., 84.,};
+   RTensor<T> TrueY(data, {1, 1, 5, 5});
+
+   ROperatorConv<T> conv("SAME_LOWER", {}, 0, {3, 3}, {}, {2, 2});
+   conv.Forward_blas(X, W, B, Y);
+
+   bool failed = !IsApprox(Y, TrueY, tol);
+   std::stringstream ss;
+   ss << "   ";
+   ss << "Convolution with auto_pad =\"SAME_LOWER\" : Test ";
+   ss << (failed? "Failed" : "Passed" );
+   std::cout << ss.str() << std::endl;
    return failed;
 }
 

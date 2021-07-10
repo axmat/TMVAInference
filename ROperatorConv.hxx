@@ -2,7 +2,7 @@
 #define TMVA_EXPERIMENTAL_SOFIE_ROPERATOR_CONV
 
 #include <TMVA/RTensor.hxx>
-
+#include <iostream>
 #include "Blas.hxx"
 
 namespace TMVA {
@@ -48,10 +48,10 @@ public:
    ~ROperatorConv() {}
 
    /** Forward pass using blas. */
-   void Forward_blas(const RTensor<T> &X /* Input */,
-                     const RTensor<T> &W /* Weights */,
-                     const RTensor<T> &B /* Bias */,
-                           RTensor<T> &Y /* Output */);
+   void Forward_blas(RTensor<T> &X /* Input */,
+                     RTensor<T> &W /* Weights */,
+                     RTensor<T> &B /* Bias */,
+                     RTensor<T> &Y /* Output */);
 };
 
 template <typename T>
@@ -91,187 +91,179 @@ void ROperatorConv<T>::Im2Col(const RTensor<T> &X,
 }
 
 template <typename T>
-void ROperatorConv<T>::Forward_blas(const RTensor<T> &X,
-                                    const RTensor<T> &W,
-                                    const RTensor<T> &B,
-                                          RTensor<T> &Y) {
+void ROperatorConv<T>::Forward_blas(RTensor<T> &X,
+                                    RTensor<T> &W,
+                                    RTensor<T> &B,
+                                    RTensor<T> &Y) {
    std::size_t inputSize = X.GetShape().size();
-   if (inputSize == 4) { // 2d convolution
-      // Input has size batchSize x channels x height x width
-      std::size_t batchSize = X.GetShape()[0];
-      std::size_t channels  = X.GetShape()[1];
-      std::size_t height    = X.GetShape()[2];
-      std::size_t width     = X.GetShape()[3];
-      // Number of groups
-      std::size_t group = (fGroup > 0) ? fGroup : channels / W.GetShape()[1];
-      // k Kernels, each kHeight x kWidth and d channels
-      std::size_t kernels = W.GetShape()[0];
-      std::size_t depth   = W.GetShape()[1];
-      std::size_t kHeight =
-          (fKernelShape.empty()) ? W.GetShape()[2] : fKernelShape[0];
-      std::size_t kWidth =
-          (fKernelShape.empty()) ? W.GetShape()[3] : fKernelShape[1];
-      // Dilations
-      std::size_t dilationsHeight = 1;
-      std::size_t dilationsWidth  = 1;
-      if (!fDilations.empty()) {
-         dilationsHeight = fDilations[0];
-         dilationsWidth  = fDilations[1];
+   if (inputSize != 4) {
+      std::stringstream ss;
+      ss << "TMVA::SOFIE - Convolution not implemented for input size = ";
+      ss << inputSize;
+      throw std::runtime_error(ss.str());
+   }
+   // Input has size batchSize x channels x height x width
+   std::size_t batchSize = X.GetShape()[0];
+   std::size_t channels  = X.GetShape()[1];
+   std::size_t height    = X.GetShape()[2];
+   std::size_t width     = X.GetShape()[3];
+   // Number of groups
+   std::size_t group = (fGroup > 0) ? fGroup : channels / W.GetShape()[1];
+   // k Kernels, each kHeight x kWidth and d channels
+   std::size_t kernels = W.GetShape()[0];
+   std::size_t depth   = W.GetShape()[1];
+   std::size_t kHeight = (fKernelShape.empty()) ? W.GetShape()[2] : fKernelShape[0];
+   std::size_t kWidth = (fKernelShape.empty()) ? W.GetShape()[3] : fKernelShape[1];
+   // Dilations
+   std::size_t dilationsHeight = 1;
+   std::size_t dilationsWidth  = 1;
+   if (!fDilations.empty()) {
+      dilationsHeight = fDilations[0];
+      dilationsWidth  = fDilations[1];
+   }
+   // kernels shape
+   std::size_t kernelHeight = kHeight + (dilationsHeight - 1) * (kHeight - 1);
+   std::size_t kernelWidth = kWidth + (dilationsWidth - 1) * (kWidth - 1);
+   // Padding
+   std::size_t padsTop;
+   std::size_t padsLeft;
+   std::size_t padsBottom;
+   std::size_t padsRight;
+   if (fAutopad == "NOTSET") { // Explicit padding
+      if (fPads.empty()) {
+         padsTop    = 1;
+         padsLeft   = 1;
+         padsBottom = 1;
+         padsRight  = 1;
+      } else { // Stride along each spatial axis
+         padsTop    = fPads[0];
+         padsLeft   = fPads[1];
+         padsBottom = fPads[2];
+         padsRight  = fPads[3];
       }
-      // kernels shape
-      std::size_t kernelHeight =
-          kHeight + (dilationsHeight - 1) * (kHeight - 1);
-      std::size_t kernelWidth = kWidth + (dilationsWidth - 1) * (kWidth - 1);
-      // Padding
-      std::size_t padsTop;
-      std::size_t padsLeft;
-      std::size_t padsBottom;
-      std::size_t padsRight;
-      if (fAutopad == "NOTSET") { // Explicit padding
-         if (fPads.empty()) {
-            padsTop    = 1;
-            padsLeft   = 1;
-            padsBottom = 1;
-            padsRight  = 1;
-         } else { // Stride along each spatial axis
-            padsTop    = fPads[0];
-            padsLeft   = fPads[1];
-            padsBottom = fPads[2];
-            padsRight  = fPads[3];
-         }
-      } else if (fAutopad == "SAME_UPPER" || fAutopad == "SAME_LOWER") {
-         padsTop  = (kernelHeight - 1) / 2;
-         padsLeft = (kernelWidth - 1) / 2;
-         padsBottom = kernelHeight / 2;
-         padsRight  = kernelWidth / 2;
-         if (kernelHeight % 2 == 1) {
-            (fAutopad == "SAME_UPPER") ? padsBottom++ : padsTop++;
-         }
-         if (kernelWidth % 2 == 1) {
-            (fAutopad == "SAME_UPPER") ? padsRight++ : padsLeft++;
-         }
-      } else if (fAutopad != "VALID") {
-         std::stringstream ss;
-         ss << "Invalid padding fAutopad=";
-         ss << fAutopad;
-         throw std::runtime_error(ss.str());
+   } else if (fAutopad == "SAME_UPPER" || fAutopad == "SAME_LOWER") {
+      padsTop  = kernelHeight / 2;
+      padsBottom = kernelHeight / 2;
+      if (kernelHeight % 2 == 1) {
+         (fAutopad == "SAME_UPPER") ? padsTop++ : padsBottom++;
       }
-      // Strides
-      std::size_t stridesHeight = 1;
-      std::size_t stridesWidth  = 1;
-      if (!fStrides.empty()) {
-         stridesHeight = fStrides[0];
-         stridesWidth  = fStrides[1];
+      padsLeft = kernelWidth / 2;
+      padsRight  = kernelWidth / 2;
+      if (kernelWidth % 2 == 1) {
+         (fAutopad == "SAME_UPPER") ? padsLeft++ : padsRight++;
       }
+   } else if (fAutopad != "VALID") {
+      throw std::runtime_error("TMVA SOFIE - Invalid padding fAutopad=" + fAutopad);
+   }
+   // Strides
+   std::size_t stridesHeight = 1;
+   std::size_t stridesWidth  = 1;
+   if (!fStrides.empty()) {
+      stridesHeight = fStrides[0];
+      stridesWidth  = fStrides[1];
+   }
 
-      RTensor<T> XPad(
-          {batchSize, channels, height + padsTop + padsBottom,
-            width + padsLeft + padsRight});
-      // Padding the input with zeros
-      for (std::size_t n = 0; n < batchSize; n++) {
-         for (std::size_t c = 0; c < channels; c++) {
-            for (std::size_t h = 0; h < height; h++) {
-               for (std::size_t w = 0; w < width; w++) {
-                  XPad(n, c, h + padsTop, w + padsLeft) = X(n, c, h, w);
-               }
+   RTensor<T> XPad({batchSize, channels, height + padsTop + padsBottom,
+      width + padsLeft + padsRight});
+   // Padding the input with zeros
+   for (std::size_t n = 0; n < batchSize; n++) {
+      for (std::size_t c = 0; c < channels; c++) {
+         for (std::size_t h = 0; h < height; h++) {
+            for (std::size_t w = 0; w < width; w++) {
+               XPad(n, c, h + padsTop, w + padsLeft) = X(n, c, h, w);
             }
          }
       }
-      // Output shape
-      std::size_t outputHeight =
-          (height + padsTop + padsBottom - kernelHeight + stridesHeight) /
-          stridesHeight;
-      std::size_t outputWidth =
-          (width + padsLeft + padsRight - kernelWidth + stridesWidth) /
-          stridesWidth;
+   }
 
-      RTensor<T> XCol({channels * kernelHeight * kernelWidth,
-                       batchSize * outputHeight * outputWidth},
-                        MemoryLayout::ColumnMajor);
-      // Unroll the input tensor
-      Im2Col(XPad, XCol, group, depth, kernelHeight, kernelWidth, stridesHeight,
-             stridesWidth);
+   // Output shape
+   std::size_t outputHeight =
+      (height + padsTop + padsBottom - kernelHeight + stridesHeight) / stridesHeight;
+   std::size_t outputWidth =
+      (width + padsLeft + padsRight - kernelWidth + stridesWidth) / stridesWidth;
 
-      // Convolution kernels,  kernels x depth x kernelHeight x KernelWidth
-      RTensor<T> F({kernels, depth * kernelHeight * kernelWidth},
-                  MemoryLayout::ColumnMajor);
-      // Vectorize the (dilated)convolution kernels into a matrix
-      for (std::size_t k = 0; k < kernels; k++) {
-         for (std::size_t d = 0; d < depth; d++) {
-            for (std::size_t h = 0; h < kHeight; h++) {
-               for (std::size_t w = 0; w < kWidth; w++) {
-                  F(k, d * kernelHeight * kernelWidth +
-                           h * dilationsHeight * kernelWidth +
-                           w * dilationsWidth) = W(k, d, h, w);
-               }
+   RTensor<T> XCol({channels * kernelHeight * kernelWidth, batchSize
+      * outputHeight * outputWidth}, MemoryLayout::ColumnMajor);
+   // Unroll the input tensor
+   Im2Col(XPad, XCol, group, depth, kernelHeight, kernelWidth, stridesHeight,
+      stridesWidth);
+
+   // Convolution kernels,  kernels x depth x kernelHeight x KernelWidth
+   RTensor<T> F({kernels, depth * kernelHeight * kernelWidth},
+      MemoryLayout::ColumnMajor);
+   // Vectorize the (dilated)convolution kernels into a matrix
+   for (std::size_t k = 0; k < kernels; k++) {
+      for (std::size_t d = 0; d < depth; d++) {
+         for (std::size_t h = 0; h < kHeight; h++) {
+            for (std::size_t w = 0; w < kWidth; w++) {
+               F(k, d * kernelHeight * kernelWidth +
+                        h * dilationsHeight * kernelWidth +
+                        w * dilationsWidth) = W(k, d, h, w);
             }
          }
       }
-      if (group == 1) {
-         // Compute the output, vec(Y) = vec(F * XCol) of size
-         // kernels x batchSize x outputHeight x outputWidth
-         char transF    = 'N';
-         char transXCol = 'N';
+   }
 
-         int m = F.GetShape()[0];
-         int n = XCol.GetShape()[1];
-         int k = F.GetShape()[1];
+   if (group == 1) {
+      // Compute the output, vec(Y) = vec(F * XCol) of size
+      // kernels x batchSize x outputHeight x outputWidth
+      char transF    = 'N';
+      char transXCol = 'N';
+      int m = F.GetShape()[0];
+      int n = XCol.GetShape()[1];
+      int k = F.GetShape()[1];
+      T alpha = 1.0;
+      T beta  = 0.0;
 
-         T alpha = 1.0;
-         T beta  = 0.0;
+      BLAS::sgemm_(&transF, &transXCol, &m, &n, &k, &alpha, F.GetData(), &m,
+         XCol.GetData(), &k, &beta, Y.GetData(), &m);
+   } else {
+      // Compute the output, Y = concatenate(Yg) where vec(Yg) = vec(Fg * Xg)
+      std::size_t FgHeight = F.GetShape()[0] / group;
+      std::size_t FgWidth  = F.GetShape()[1];
+      T *Fg = new T[FgHeight * FgWidth];
 
-         BLAS::sgemm_(&transF, &transXCol, &m, &n, &k, &alpha, F.GetData(), &m,
-                       XCol.GetData(), &k, &beta, Y.GetData(), &m);
-      } else {
-         // Compute the output, Y = concatenate(Yg) where vec(Yg) = vec(Fg * Xg)
-         std::size_t FgHeight = F.GetShape()[0] / group;
-         std::size_t FgWidth  = F.GetShape()[1];
-         T *Fg = new T[FgHeight * FgWidth];
+      std::size_t XgHeight = XCol.GetShape()[0] / group;
+      std::size_t XgWidth  = XCol.GetShape()[1];
+      T *Xg = new T[XgHeight * XgWidth];
+      T *Yg = new T[FgHeight * XgWidth];
 
-         std::size_t XgHeight = XCol.GetShape()[0] / group;
-         std::size_t XgWidth  = XCol.GetShape()[1];
-         T *Xg = new T[XgHeight * XgWidth];
+      char transF  = 'N';
+      char transXg = 'N';
+      int m = FgHeight;
+      int n = XgWidth;
+      int k = FgWidth;
+      T alpha = 1.0;
+      T beta  = 0.0;
 
-         T *Yg = new T[FgHeight * XgWidth];
-         T *data = Y.GetData();
-
-         char transF  = 'N';
-         char transXg = 'N';
-
-         int m = FgHeight;
-         int n = XgWidth;
-         int k = FgWidth;
-
-         T alpha = 1.0;
-         T beta  = 0.0;
-
-         for (std::size_t g = 0; g < group; g++) {
-            // Copy F(g * FgHeight:(g + 1) * FgHeight, 0:FgWidth) to Fg
-            for (std::size_t h = 0; h < FgHeight; h++) {
-               for (std::size_t w = 0; w < FgWidth; w++) {
-                  Fg[h + w * FgHeight] = F(h + g * FgHeight, w);
-               }
-            }
-            // Copy XCol(g * XgHeight:(g + 1) * XgHeight, 0:XgWidth) to Xg
-            for (std::size_t h = 0; h < XgHeight; h++) {
-               for (std::size_t w = 0; w < XgWidth; w++) {
-                  Xg[h + w * XgHeight] = XCol(h + g * XgHeight, w);
-               }
-            }
-            // Compute Yg = Fg * Xg
-            BLAS::sgemm_(&transF, &transXg, &m, &n, &k, &alpha, Fg, &m, Xg, &k,
-                          &beta, Yg, &m);
-            // Copy Yg to Y(g * FgHeight * XgWidth:(g + 1) * FgHeight * XgWidth)
-            for (std::size_t i = 0; i < FgHeight * XgWidth; i++) {
-               data[i + g * FgHeight * XgWidth] = Yg[i];
+      for (std::size_t g = 0; g < group; g++) {
+         // Copy F(g * FgHeight:(g + 1) * FgHeight, 0:FgWidth) to Fg
+         for (std::size_t h = 0; h < FgHeight; h++) {
+            for (std::size_t w = 0; w < FgWidth; w++) {
+               Fg[h + w * FgHeight] = F(h + g * FgHeight, w);
             }
          }
-
-         delete[] Fg;
-         delete[] Xg;
-         delete[] Yg;
+         // Copy XCol(g * XgHeight:(g + 1) * XgHeight, 0:XgWidth) to Xg
+         for (std::size_t h = 0; h < XgHeight; h++) {
+            for (std::size_t w = 0; w < XgWidth; w++) {
+               Xg[h + w * XgHeight] = XCol(h + g * XgHeight, w);
+            }
+         }
+         // Compute Yg = Fg * Xg
+         BLAS::sgemm_(&transF, &transXg, &m, &n, &k, &alpha, Fg, &m, Xg, &k, &beta,
+            Yg, &m);
+         // Copy Yg to Y(g * FgHeight * XgWidth:(g + 1) * FgHeight * XgWidth)
+         for (std::size_t i = 0; i < FgHeight * XgWidth; i++) {
+            Y.GetData()[i + g * FgHeight * XgWidth] = Yg[i];
+         }
       }
 
+      delete[] Fg;
+      delete[] Xg;
+      delete[] Yg;
+   }
+
+   if (B.GetShape().size() > 0) {
       std::size_t outputSize = kernels * batchSize * outputHeight * outputWidth;
       T* Bias = new T[outputSize];
       for(std::size_t k = 0; k < kernels; k++) {
@@ -286,15 +278,9 @@ void ROperatorConv<T>::Forward_blas(const RTensor<T> &X,
       float alpha = 1.0;
       int incx = 1;
       int incy = 1;
-
       BLAS::saxpy_(&n, &alpha, Bias, &incx, Y.GetData(), &incy);
 
       delete[] Bias;
-   } else {
-      std::stringstream ss;
-      ss << "TMVA::SOFIE - Convolution not implemented for input size = ";
-      ss << inputSize;
-      throw std::runtime_error(ss.str());
    }
 }
 
