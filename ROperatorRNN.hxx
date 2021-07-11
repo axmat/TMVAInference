@@ -91,63 +91,63 @@ void ROperatorRNN<T>::Forward_blas(RTensor<T> &X,
       }
    }
 
-   size_t seq_length = (fLayout == 0) ? X.GetShape()[0] : X.GetShape()[1];
-   size_t batch_size = (fLayout == 0) ? X.GetShape()[1] : X.GetShape()[0];
-   size_t input_size = X.GetShape()[2];
-   size_t num_directions = W.GetShape()[0];
+   size_t seqLength = (fLayout == 0) ? X.GetShape()[0] : X.GetShape()[1];
+   size_t batchSize = (fLayout == 0) ? X.GetShape()[1] : X.GetShape()[0];
+   size_t inputSize = X.GetShape()[2];
+   size_t numDirections = W.GetShape()[0];
 
    // set the input
-   T *input = nullptr;
+   T *Input = nullptr;
    if (fLayout == 0) {
-      input = X.GetData();
+      Input = X.GetData();
    } else {
       // reshape X
-      input = new T[seq_length * batch_size * input_size];
-      for (size_t seq = 0; seq < seq_length; seq++) {
-         for (size_t batch = 0; batch < batch_size; batch++) {
-            for (size_t i = 0; i < input_size; i++) {
-               input[seq * batch_size * input_size + batch * input_size + i] =
-                   X.GetData()[batch * seq_length * input_size + seq * input_size + i];
+      Input = new T[seqLength * batchSize * inputSize];
+      for (size_t seq = 0; seq < seqLength; seq++) {
+         for (size_t batch = 0; batch < batchSize; batch++) {
+            for (size_t i = 0; i < inputSize; i++) {
+               Input[seq * batchSize * inputSize + batch * inputSize + i] =
+                   X.GetData()[batch * seqLength * inputSize + seq * inputSize + i];
             }
          }
       }
    }
 
    // Broadcasting the bias
-   T *bias = nullptr;
+   T *Bias = nullptr;
    if (B.GetShape().size() > 0) {
-      bias = new T[num_directions * seq_length * batch_size * fHiddenSize];
+      Bias = new T[numDirections * seqLength * batchSize * fHiddenSize];
       T sum[fHiddenSize];
-      for (size_t direction = 0; direction < num_directions; direction++) {
-         // Compute sum = bias_xh + bias_hh
+      for (size_t direction = 0; direction < numDirections; direction++) {
+         // Compute sum = B_{input,hidden} + B_{hidden,hidden}
          for (size_t h = 0; h < fHiddenSize; h++) {
             sum[h] = B.GetData()[direction * 2 * fHiddenSize + h] +
                 B.GetData()[direction * 2 * fHiddenSize + fHiddenSize + h];
          }
-         // Copy sum into bias
-         for (size_t seq = 0; seq < seq_length; seq++) {
-            for (size_t batch = 0; batch < batch_size; batch++) {
-               size_t bias_offset = direction * seq_length * batch_size * fHiddenSize +
-                                    seq * batch_size * fHiddenSize + batch * fHiddenSize;
-               std::copy(sum, sum + fHiddenSize, bias + bias_offset);
+         // Copy sum into Bias
+         for (size_t seq = 0; seq < seqLength; seq++) {
+            for (size_t batch = 0; batch < batchSize; batch++) {
+               size_t biasOffset = direction * seqLength * batchSize * fHiddenSize +
+                                    seq * batchSize * fHiddenSize + batch * fHiddenSize;
+               std::copy(sum, sum + fHiddenSize, Bias + biasOffset);
             }
          }
       }
    }
 
    // set the initial hidden state
-   T *initial_hidden_state = nullptr;
+   T *InitialHiddenState = nullptr;
    if (initial_h.GetShape().size() > 0) {
       if (fLayout == 0) {
-         initial_hidden_state = initial_h.GetData();
+         InitialHiddenState = initial_h.GetData();
       } else {
-         initial_hidden_state = new T[num_directions * batch_size * fHiddenSize];
-         for (size_t direction = 0; direction < num_directions; direction++) {
-            for (size_t batch = 0; batch < batch_size; batch++) {
+         InitialHiddenState = new T[numDirections * batchSize * fHiddenSize];
+         for (size_t direction = 0; direction < numDirections; direction++) {
+            for (size_t batch = 0; batch < batchSize; batch++) {
                for (size_t h = 0; h < fHiddenSize; h++) {
-                  initial_hidden_state[direction * batch_size * fHiddenSize +
+                  InitialHiddenState[direction * batchSize * fHiddenSize +
                                        batch * fHiddenSize + h] =
-                      initial_h.GetData()[batch * num_directions * fHiddenSize +
+                      initial_h.GetData()[batch * numDirections * fHiddenSize +
                                           direction * fHiddenSize + h];
                }
             }
@@ -155,131 +155,131 @@ void ROperatorRNN<T>::Forward_blas(RTensor<T> &X,
       }
    }
 
-   T feedforward[seq_length * batch_size * fHiddenSize];
+   T FeedForward[seqLength * batchSize * fHiddenSize];
    // set the hidden state
-   T *hidden_state = nullptr;
+   T *HiddenState = nullptr;
    if (fLayout == 0 && Y.GetShape().size() > 0) {
-      hidden_state = Y.GetData();
+      HiddenState = Y.GetData();
    } else {
-      hidden_state = new T[seq_length * num_directions * batch_size * fHiddenSize];
+      HiddenState = new T[seqLength * numDirections * batchSize * fHiddenSize];
    }
 
-   for (size_t direction = 0; direction < num_directions; direction++) {
+   for (size_t direction = 0; direction < numDirections; direction++) {
       bool backward = (fDirection == "backward") || (direction == 1);
-      // feedforward = input * W^T + bias
+      // Feedforward = input * W^T
       char transA = 'N';
       char transB = 'T';
-      int m1 = seq_length * batch_size;
+      int m1 = seqLength * batchSize;
       int n = fHiddenSize;
-      int k = input_size;
+      int k = inputSize;
       float alpha = 1.;
       float beta = 0.;
-      size_t w_offset = direction * fHiddenSize * input_size;
-      BLAS::sgemm_(&transB, &transA, &n, &m1, &k, &alpha, W.GetData() + w_offset, &k,
-                   input, &k, &beta, feedforward, &n);
-      if (bias) {
-         int bias_size = seq_length * batch_size * fHiddenSize;
+      size_t wOffset = direction * fHiddenSize * inputSize;
+      BLAS::sgemm_(&transB, &transA, &n, &m1, &k, &alpha, W.GetData() + wOffset, &k,
+                   Input, &k, &beta, FeedForward, &n);
+      // Feedforward += Bias
+      if (Bias) {
+         int biasSize = seqLength * batchSize * fHiddenSize;
          int incx = 1;
          int incy = 1;
-         size_t bias_offset = direction * seq_length * batch_size * fHiddenSize;
-         BLAS::saxpy_(&bias_size, &alpha, bias + bias_offset, &incx, feedforward, &incy);
+         size_t biasOffset = direction * seqLength * batchSize * fHiddenSize;
+         BLAS::saxpy_(&biasSize, &alpha, Bias + biasOffset, &incx, FeedForward, &incy);
       }
-      // Copy feedforward into hidden_state
-      for (size_t seq = 0; seq < seq_length; seq++) {
-         size_t feedforward_offset = seq * batch_size * fHiddenSize;
-         size_t feedforward_size = batch_size * fHiddenSize;
-         size_t h_offset = seq * num_directions * batch_size * fHiddenSize +
-                         direction * batch_size * fHiddenSize;
-         std::copy(feedforward + feedforward_offset, feedforward + feedforward_offset + feedforward_size,
-                   hidden_state + h_offset);
+      // Copy Feedforward into HiddenState
+      for (size_t seq = 0; seq < seqLength; seq++) {
+         size_t feedForwardOffset = seq * batchSize * fHiddenSize;
+         size_t feedForwardSize = batchSize * fHiddenSize;
+         size_t hOffset = seq * numDirections * batchSize * fHiddenSize +
+                         direction * batchSize * fHiddenSize;
+         std::copy(FeedForward + feedForwardOffset, FeedForward + feedForwardOffset + feedForwardSize,
+                   HiddenState + hOffset);
       }
 
-      for (size_t seq = 0; seq < seq_length; seq++) {
-         size_t index = backward ? seq_length - 1 - seq : seq;
-         // Compute hidden_state_{seq} = 1.0 * hidden_state_{seq} + hidden_state_{seq-1} * R^T
-         // hidden_state_{seq} is the slice hidden_state[offset...offset + size]
-         int m = batch_size;
-         size_t offset = index * num_directions * batch_size * fHiddenSize +
-                         direction * batch_size * fHiddenSize;
-         size_t size = batch_size * fHiddenSize;
+      for (size_t seq = 0; seq < seqLength; seq++) {
+         size_t index = backward ? seqLength - 1 - seq : seq;
+         // Compute HiddenState_{seq} = 1.0 * HiddenState_{seq} + HiddenState_{seq-1} * R^T
+         // HiddenState_{seq} is the slice HiddenState[offset...offset + size]
+         int m = batchSize;
+         size_t offset = index * numDirections * batchSize * fHiddenSize +
+                         direction * batchSize * fHiddenSize;
+         size_t size = batchSize * fHiddenSize;
          if (seq == 0) {
-            if (initial_hidden_state) {
-               size_t r_offset = direction * fHiddenSize * fHiddenSize;
-               size_t initial_hidden_state_offset = direction * batch_size * fHiddenSize;
-               BLAS::sgemm_(&transB, &transA, &n, &m, &n, &alpha, R.GetData() + r_offset, &n,
-                            initial_hidden_state + initial_hidden_state_offset, &n, &alpha,
-                            hidden_state + offset, &n);
+            if (InitialHiddenState) {
+               size_t rOffset = direction * fHiddenSize * fHiddenSize;
+               size_t initialHOffset = direction * batchSize * fHiddenSize;
+               BLAS::sgemm_(&transB, &transA, &n, &m, &n, &alpha, R.GetData() + rOffset, &n,
+                  InitialHiddenState + initialHOffset, &n, &alpha, HiddenState + offset, &n);
             }
          } else {
-            size_t r_offset = direction * fHiddenSize * fHiddenSize;
-            size_t previous_offset = (backward ? (index + 1) : (seq - 1)) * num_directions * batch_size *
-                                         fHiddenSize + direction * batch_size * fHiddenSize;
-            BLAS::sgemm_(&transB, &transA, &n, &m, &n, &alpha, R.GetData() + r_offset, &n,
-                         hidden_state + previous_offset, &n, &alpha, hidden_state + offset, &n);
+            size_t rOffset = direction * fHiddenSize * fHiddenSize;
+            size_t previousOffset = (backward ? (index + 1) : (seq - 1)) * numDirections * batchSize *
+                                         fHiddenSize + direction * batchSize * fHiddenSize;
+            BLAS::sgemm_(&transB, &transA, &n, &m, &n, &alpha, R.GetData() + rOffset, &n,
+                         HiddenState + previousOffset, &n, &alpha, HiddenState + offset, &n);
          }
-         // Clip the elements of hidden_state_{seq} into the range [-fClip, fClip]
+         // Clip the elements of HiddenState_{seq} into the range [-fClip, fClip]
          if (fClip > 0.) {
             for (size_t i = offset; i < offset + size; i++) {
-               T x = (hidden_state[i] > -fClip) ? hidden_state[i] : -fClip;
-               hidden_state[i] = (x < fClip) ? x : fClip;
+               T x = (HiddenState[i] > -fClip) ? HiddenState[i] : -fClip;
+               HiddenState[i] = (x < fClip) ? x : fClip;
             }
          }
          // Apply the activation function
          if (fActivations[direction] == "Relu") {
             for (size_t i = offset; i < offset + size; i++) {
-               if (hidden_state[i] < 0.)
-                  hidden_state[i] = 0.;
+               if (HiddenState[i] < 0.)
+                  HiddenState[i] = 0.;
             }
          } else if (fActivations[direction] == "Tanh") {
             for (size_t i = offset; i < offset + size; i++) {
-               float ex = exp(-2 * hidden_state[i]);
-               hidden_state[i] = (1. - ex) / (1. + ex);
+               float ex = exp(-2 * HiddenState[i]);
+               HiddenState[i] = (1. - ex) / (1. + ex);
             }
          } else if (fActivations[direction] == "Sigmoid") {
             for (size_t i = offset; i < offset + size; i++) {
-               hidden_state[i] = 1. / (1. + exp(-hidden_state[i]));
+               HiddenState[i] = 1. / (1. + exp(-HiddenState[i]));
             }
          } else if (fActivations[direction] == "Affine") {
             for (size_t i = offset; i < offset + size; i++) {
-               hidden_state[i] = fActivationAlpha[direction] * hidden_state[i] + fActivationBeta[direction];
+               HiddenState[i] = fActivationAlpha[direction] * HiddenState[i] + fActivationBeta[direction];
             }
          } else if (fActivations[direction] == "LeakyRelu") {
             for (size_t i = offset; i < offset + size; i++) {
-               if (hidden_state[i] < 0.) {
-                  hidden_state[i] = fActivationAlpha[direction] * hidden_state[i];
+               if (HiddenState[i] < 0.) {
+                  HiddenState[i] = fActivationAlpha[direction] * HiddenState[i];
                   ;
                }
             }
          } else if (fActivations[direction] == "ThresholdRelu") {
             for (size_t i = offset; i < offset + size; i++) {
-               if (hidden_state[i] < fActivationAlpha[direction]) {
-                  hidden_state[i] = 0.;
+               if (HiddenState[i] < fActivationAlpha[direction]) {
+                  HiddenState[i] = 0.;
                }
             }
          } else if (fActivations[direction] == "ScaledTanh") {
             for (size_t i = offset; i < offset + size; i++) {
-               float x = exp(-2 * fActivationBeta[direction] * hidden_state[i]);
-               hidden_state[i] = fActivationAlpha[direction] * (1. - x) / (1. + x);
+               float x = exp(-2 * fActivationBeta[direction] * HiddenState[i]);
+               HiddenState[i] = fActivationAlpha[direction] * (1. - x) / (1. + x);
             }
          } else if (fActivations[direction] == "HardSigmoid") {
             for (size_t i = offset; i < offset + size; i++) {
-               float a = fActivationAlpha[direction] * hidden_state[i] + fActivationBeta[direction];
+               float a = fActivationAlpha[direction] * HiddenState[i] + fActivationBeta[direction];
                float b = (a > 0.) ? a : 0.;
-               hidden_state[i] = (b < 1.) ? b : 1.;
+               HiddenState[i] = (b < 1.) ? b : 1.;
             }
          } else if (fActivations[direction] == "Elu") {
             for (size_t i = offset; i < offset + size; i++) {
-               if (hidden_state[i] < 0.) {
-                  hidden_state[i] = fActivationAlpha[direction] * (exp(hidden_state[i] - 1.));
+               if (HiddenState[i] < 0.) {
+                  HiddenState[i] = fActivationAlpha[direction] * (exp(HiddenState[i] - 1.));
                }
             }
          } else if (fActivations[direction] == "Softsign") {
             for (size_t i = offset; i < offset + size; i++) {
-               hidden_state[i] = hidden_state[i] / (1. + abs(hidden_state[i]));
+               HiddenState[i] = HiddenState[i] / (1. + abs(HiddenState[i]));
             }
          } else { // Softplus
             for (size_t i = offset; i < offset + size; i++) {
-               hidden_state[i] = log(1. + exp(hidden_state[i]));
+               HiddenState[i] = log(1. + exp(HiddenState[i]));
             }
          }
       }
@@ -287,13 +287,13 @@ void ROperatorRNN<T>::Forward_blas(RTensor<T> &X,
 
    // padding the hidden state of RNN with different sequence lengths
    if (sequence_lens.GetShape().size() > 0) {
-      for (size_t seq = 0; seq < seq_length; seq++) {
-         for (size_t batch = 0; batch < batch_size; batch++) {
+      for (size_t seq = 0; seq < seqLength; seq++) {
+         for (size_t batch = 0; batch < batchSize; batch++) {
             if (seq >= sequence_lens.GetData()[batch]) {
-               for (size_t direction = 0; direction < num_directions; direction++) {
+               for (size_t direction = 0; direction < numDirections; direction++) {
                   for (size_t h = 0; h < fHiddenSize; h++) {
-                     hidden_state[seq * num_directions * batch_size * fHiddenSize
-                        + direction * batch_size * fHiddenSize + batch * fHiddenSize
+                     HiddenState[seq * numDirections * batchSize * fHiddenSize
+                        + direction * batchSize * fHiddenSize + batch * fHiddenSize
                         + h] = .0;
                   }
                }
@@ -305,73 +305,73 @@ void ROperatorRNN<T>::Forward_blas(RTensor<T> &X,
    if (fLayout == 0) {
       if (Y_h.GetShape().size() > 0) {
          if (sequence_lens.GetShape().size() > 0) {
-            for (size_t direction = 0; direction < num_directions; direction++) {
+            for (size_t direction = 0; direction < numDirections; direction++) {
                bool backward = (fDirection == "backward") || (direction == 1);
-               for (size_t batch = 0; batch < batch_size; batch++) {
+               for (size_t batch = 0; batch < batchSize; batch++) {
                   size_t seq = backward ? 0 : (sequence_lens.GetShape().size() > 0 ?
-                     sequence_lens.GetData()[batch] - 1 : seq_length - 1);
-                  size_t offset = seq * num_directions * batch_size * fHiddenSize
-                     + direction * batch_size * fHiddenSize + batch * fHiddenSize;
-                  size_t y_h_offset = direction * batch_size * fHiddenSize
+                     sequence_lens.GetData()[batch] - 1 : seqLength - 1);
+                  size_t offset = seq * numDirections * batchSize * fHiddenSize
+                     + direction * batchSize * fHiddenSize + batch * fHiddenSize;
+                  size_t yHOffset = direction * batchSize * fHiddenSize
                      + batch * fHiddenSize;
-                  std::copy(hidden_state + offset, hidden_state + offset + fHiddenSize,
-                     Y_h.GetData() + y_h_offset);
+                  std::copy(HiddenState + offset, HiddenState + offset + fHiddenSize,
+                     Y_h.GetData() + yHOffset);
                }
             }
          } else {
-            for (size_t direction = 0; direction < num_directions; direction++) {
+            for (size_t direction = 0; direction < numDirections; direction++) {
                bool backward = (fDirection == "backward") || (direction == 1);
-               size_t seq = backward ? 0 : seq_length - 1;
-               size_t offset = seq * num_directions * batch_size * fHiddenSize +
-                  direction * batch_size * fHiddenSize;
-               size_t size = batch_size * fHiddenSize;
-               size_t y_h_offset = direction * batch_size * fHiddenSize;
-               std::copy(hidden_state + offset, hidden_state + offset + size,
-                  Y_h.GetData() + y_h_offset);
+               size_t seq = backward ? 0 : seqLength - 1;
+               size_t offset = seq * numDirections * batchSize * fHiddenSize +
+                  direction * batchSize * fHiddenSize;
+               size_t size = batchSize * fHiddenSize;
+               size_t yHOffset = direction * batchSize * fHiddenSize;
+               std::copy(HiddenState + offset, HiddenState + offset + size,
+                  Y_h.GetData() + yHOffset);
             }
          }
       }
    } else { // fLayout=1
       if (Y.GetShape().size() > 0) {
-         for (size_t seq = 0; seq < seq_length; seq++) {
-            for (size_t direction = 0; direction < num_directions; direction++) {
-               for (size_t batch = 0; batch < batch_size; batch++) {
-                  size_t offset = seq * num_directions * batch_size * fHiddenSize +
-                     direction * batch_size * fHiddenSize + batch * fHiddenSize;
-                  size_t y_offset = batch * seq_length * num_directions * fHiddenSize +
-                     seq * num_directions * fHiddenSize + direction * fHiddenSize;
-                  std::copy(hidden_state + offset, hidden_state + offset + fHiddenSize,
-                            Y.GetData() + y_offset);
+         for (size_t seq = 0; seq < seqLength; seq++) {
+            for (size_t direction = 0; direction < numDirections; direction++) {
+               for (size_t batch = 0; batch < batchSize; batch++) {
+                  size_t offset = seq * numDirections * batchSize * fHiddenSize +
+                     direction * batchSize * fHiddenSize + batch * fHiddenSize;
+                  size_t yOffset = batch * seqLength * numDirections * fHiddenSize +
+                     seq * numDirections * fHiddenSize + direction * fHiddenSize;
+                  std::copy(HiddenState + offset, HiddenState + offset + fHiddenSize,
+                            Y.GetData() + yOffset);
                }
             }
          }
       }
       if (Y_h.GetShape().size() > 0) {
-         for (size_t direction = 0; direction < num_directions; direction++) {
+         for (size_t direction = 0; direction < numDirections; direction++) {
             bool backward = (fDirection == "backward") || (direction == 1);
-            for (size_t batch = 0; batch < batch_size; batch++) {
+            for (size_t batch = 0; batch < batchSize; batch++) {
                size_t seq = backward ? 0 : (sequence_lens.GetShape().size() > 0 ?
-                  sequence_lens.GetData()[batch] - 1 : seq_length - 1);
-               size_t offset = seq * num_directions * batch_size * fHiddenSize +
-                  direction * batch_size * fHiddenSize + batch * fHiddenSize;
-               size_t y_h_offset = batch * num_directions * fHiddenSize +
+                  sequence_lens.GetData()[batch] - 1 : seqLength - 1);
+               size_t offset = seq * numDirections * batchSize * fHiddenSize +
+                  direction * batchSize * fHiddenSize + batch * fHiddenSize;
+               size_t yHOffset = batch * numDirections * fHiddenSize +
                   direction * fHiddenSize;
-               std::copy(hidden_state + offset, hidden_state + offset + fHiddenSize,
-                  Y_h.GetData() + y_h_offset);
+               std::copy(HiddenState + offset, HiddenState + offset + fHiddenSize,
+                  Y_h.GetData() + yHOffset);
             }
          }
       }
    }
 
-   if (bias) {
-      delete[] bias;
+   if (Bias) {
+      delete[] Bias;
    }
    if (fLayout == 1) {
-      delete[] input;
-      delete[] initial_hidden_state;
+      delete[] Input;
+      delete[] InitialHiddenState;
    }
    if (fLayout == 1 || Y.GetShape().size() == 0)
-      delete[] hidden_state;
+      delete[] HiddenState;
 }
 
 } // namespace SOFIE
