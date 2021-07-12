@@ -101,83 +101,83 @@ void ROperatorLSTM<T>::Forward_blas(RTensor<T> &X,
          std::runtime_error("TMVA SOFIE - Invalid fLayout = " + std::to_string(fLayout));
    }
 
-   size_t seq_length = (fLayout == 0) ? X.GetShape()[0] : X.GetShape()[1];
-   size_t batch_size = (fLayout == 0) ? X.GetShape()[1] : X.GetShape()[0];
-   size_t input_size = X.GetShape()[2];
-   size_t num_directions = W.GetShape()[0];
+   size_t seqLength = (fLayout == 0) ? X.GetShape()[0] : X.GetShape()[1];
+   size_t batchSize = (fLayout == 0) ? X.GetShape()[1] : X.GetShape()[0];
+   size_t inputSize = X.GetShape()[2];
+   size_t numDirections = W.GetShape()[0];
 
    // Set the input
-   T* input = nullptr;
+   T* Input = nullptr;
    if (fLayout == 0) {
-      input = X.GetData();
+      Input = X.GetData();
    } else {
-      input = new T[seq_length * batch_size * input_size];
-      for(size_t seq = 0; seq < seq_length; seq++) {
-         for (size_t batch = 0; batch < batch_size; batch++) {
-            for(size_t i = 0; i < input_size; i++) {
-               input[seq * batch_size * input_size + batch * input_size + i] = X.GetData()[
-                  batch * seq_length * input_size + seq * input_size + i];
+      Input = new T[seqLength * batchSize * inputSize];
+      for(size_t seq = 0; seq < seqLength; seq++) {
+         for (size_t batch = 0; batch < batchSize; batch++) {
+            for(size_t i = 0; i < inputSize; i++) {
+               Input[seq * batchSize * inputSize + batch * inputSize + i] = X.GetData()[
+                  batch * seqLength * inputSize + seq * inputSize + i];
             }
          }
       }
    }
 
    // Broadcasting the bias
-   T* bias = nullptr;
+   T* Bias = nullptr;
    if (B.GetShape().size() > 0) {
-      bias = new T[4 * num_directions * seq_length * batch_size * fHiddenSize];
+      Bias = new T[4 * numDirections * seqLength * batchSize * fHiddenSize];
       for (size_t gate = 0; gate < 4; gate++) {
          T sum[fHiddenSize];
-         for (size_t direction = 0; direction < num_directions; direction++) {
+         for (size_t direction = 0; direction < numDirections; direction++) {
             // Compute the sum of the gate-hidden bias and the hidden-hidden bias
             size_t offset = direction * 8 * fHiddenSize + gate * fHiddenSize;
             for (size_t h = 0; h < fHiddenSize; h++) {
                sum[h] = B.GetData()[offset + h] + B.GetData()[offset + h + 4 * fHiddenSize];
             }
             // Copy sum into bias
-            for (size_t seq = 0; seq < seq_length; seq++) {
-               for (size_t batch = 0; batch < batch_size; batch++) {
-                  size_t bias_offset = gate * num_directions * seq_length * batch_size * fHiddenSize
-                     + direction * seq_length * batch_size * fHiddenSize
-                     + seq * batch_size * fHiddenSize + batch * fHiddenSize;
-                  std::copy(sum, sum + fHiddenSize, bias + bias_offset);
+            for (size_t seq = 0; seq < seqLength; seq++) {
+               for (size_t batch = 0; batch < batchSize; batch++) {
+                  size_t biasOffset = gate * numDirections * seqLength * batchSize * fHiddenSize
+                     + direction * seqLength * batchSize * fHiddenSize
+                     + seq * batchSize * fHiddenSize + batch * fHiddenSize;
+                  std::copy(sum, sum + fHiddenSize, Bias + biasOffset);
                }
             }
          }
       }
    }
    // Broadcasting the weight for peepholes
-   T* peephole = nullptr;
+   T* Peephole = nullptr;
    if (P.GetShape().size() > 0) {
-      if (batch_size == 1) {
-         peephole = P.GetData();
+      if (batchSize == 1) {
+         Peephole = P.GetData();
       } else {
-         peephole = new T[num_directions * 3 * batch_size * fHiddenSize];
-         for (size_t direction = 0; direction < num_directions; direction++) {
+         Peephole = new T[numDirections * 3 * batchSize * fHiddenSize];
+         for (size_t direction = 0; direction < numDirections; direction++) {
             for (size_t gate = 0; gate < 3; gate++) {
-               size_t p_offset = direction * 3 * fHiddenSize + gate * fHiddenSize;
-               for (size_t batch = 0; batch < batch_size; batch++) {
-                  size_t offset = direction * 3 * batch_size * fHiddenSize +
-                     gate * batch_size * fHiddenSize + batch * fHiddenSize;
-                  std::copy(P.GetData() + p_offset, P.GetData() + p_offset + fHiddenSize,
-                     peephole + offset);
+               size_t pOffset = direction * 3 * fHiddenSize + gate * fHiddenSize;
+               for (size_t batch = 0; batch < batchSize; batch++) {
+                  size_t offset = direction * 3 * batchSize * fHiddenSize +
+                     gate * batchSize * fHiddenSize + batch * fHiddenSize;
+                  std::copy(P.GetData() + pOffset, P.GetData() + pOffset + fHiddenSize,
+                     Peephole + offset);
                }
             }
          }
       }
    }
    // Set the initial hidden state
-   T* initial_hidden_state = nullptr;
+   T* InitialHiddenState = nullptr;
    if (initial_h.GetShape().size() > 0) {
       if (fLayout == 0) {
-         initial_hidden_state = initial_h.GetData();
+         InitialHiddenState = initial_h.GetData();
       } else {
-         initial_hidden_state = new T[num_directions * batch_size * fHiddenSize];
-         for (size_t direction = 0; direction < num_directions; direction++) {
-            for (size_t batch = 0; batch < batch_size; batch++) {
+         InitialHiddenState = new T[numDirections * batchSize * fHiddenSize];
+         for (size_t direction = 0; direction < numDirections; direction++) {
+            for (size_t batch = 0; batch < batchSize; batch++) {
                for (size_t h = 0; h < fHiddenSize; h++) {
-                  initial_hidden_state[direction * batch_size * fHiddenSize + batch * fHiddenSize + h] =
-                     initial_h.GetData()[batch * num_directions * fHiddenSize + direction * fHiddenSize
+                  InitialHiddenState[direction * batchSize * fHiddenSize + batch * fHiddenSize + h] =
+                     initial_h.GetData()[batch * numDirections * fHiddenSize + direction * fHiddenSize
                         + h];
                }
             }
@@ -185,17 +185,17 @@ void ROperatorLSTM<T>::Forward_blas(RTensor<T> &X,
       }
    }
    // Set the initial cell state
-   T* initial_cell_state = nullptr;
+   T* InitialCellState = nullptr;
    if (initial_c.GetShape().size() > 0) {
       if (fLayout == 0) {
-         initial_cell_state = initial_c.GetData();
+         InitialCellState = initial_c.GetData();
       } else {
-         initial_cell_state = new T[num_directions * batch_size * fHiddenSize];
-         for (size_t direction = 0; direction < num_directions; direction++) {
-            for (size_t batch = 0; batch < batch_size; batch++) {
+         InitialCellState = new T[numDirections * batchSize * fHiddenSize];
+         for (size_t direction = 0; direction < numDirections; direction++) {
+            for (size_t batch = 0; batch < batchSize; batch++) {
                for (size_t h = 0; h < fHiddenSize; h++) {
-                  initial_cell_state[direction * batch_size * fHiddenSize + batch * fHiddenSize + h] =
-                     initial_c.GetData()[batch * num_directions * fHiddenSize + direction * fHiddenSize
+                  InitialCellState[direction * batchSize * fHiddenSize + batch * fHiddenSize + h] =
+                     initial_c.GetData()[batch * numDirections * fHiddenSize + direction * fHiddenSize
                         + h];
                }
             }
@@ -204,249 +204,255 @@ void ROperatorLSTM<T>::Forward_blas(RTensor<T> &X,
    }
 
    // Set the feedforward
-   T ff_input_gate[seq_length * batch_size * fHiddenSize];
-   T* ff_forget_gate = nullptr;
+   T FInputGate[seqLength * batchSize * fHiddenSize];
+   T* FForgetGate = nullptr;
    if (fInputForget == 0) {
-      ff_forget_gate = new T[seq_length * batch_size * fHiddenSize];
+      FForgetGate = new T[seqLength * batchSize * fHiddenSize];
    }
-   T ff_output_gate[seq_length * batch_size * fHiddenSize];
-   T ff_cell_gate[seq_length * batch_size * fHiddenSize];
+   T FOutputGate[seqLength * batchSize * fHiddenSize];
+   T FCellGate[seqLength * batchSize * fHiddenSize];
    // Set the gates
-   size_t hidden_state_size = seq_length * num_directions * batch_size * fHiddenSize;
-   T input_gate[hidden_state_size];
-   T* forget_gate = nullptr;
+   size_t hiddenStateSize = seqLength * numDirections * batchSize * fHiddenSize;
+   T InputGate[hiddenStateSize];
+   T* ForgetGate = nullptr;
    if (fInputForget == 0) {
-      forget_gate = new T[hidden_state_size];
+      ForgetGate = new T[hiddenStateSize];
    }
-   T output_gate[hidden_state_size];
-   T cell_gate[hidden_state_size];
+   T OutputGate[hiddenStateSize];
+   T CellGate[hiddenStateSize];
    // Set the cell state
-   T cell_state[hidden_state_size];
+   T CellState[hiddenStateSize];
    // new cell state = h(cell_state)
-   T new_cell_state[hidden_state_size];
+   T NewCellState[hiddenStateSize];
    // Set the hidden state
-   T * hidden_state = nullptr;
+   T * HiddenState = nullptr;
    if (fLayout == 0 && Y.GetShape().size() > 0) {
-      hidden_state = Y.GetData();
+      HiddenState = Y.GetData();
    } else {
-      hidden_state = new T[hidden_state_size];
+      HiddenState = new T[hiddenStateSize];
    }
 
-   for (size_t direction = 0; direction < num_directions; direction++) {
+   for (size_t direction = 0; direction < numDirections; direction++) {
       char transA = 'N';
       char transB = 'T';
-      int m = seq_length * batch_size;
+      int m = seqLength * batchSize;
       int n = fHiddenSize;
-      int k = input_size;
+      int k = inputSize;
       float alpha = 1.;
       float beta = 0.;
-      // input_gate = input * weight^T + bias
-      size_t wi_offset = direction * 4 * fHiddenSize * input_size;
-      BLAS::sgemm_(&transB, &transA, &n, &m, &k, &alpha, W.GetData() + wi_offset, &k,
-         input, &k, &beta, ff_input_gate, &n);
-      // output_gate = input * weight^T + bias
-      size_t wo_offset = direction * 4 * fHiddenSize * input_size +
-         2 * fHiddenSize * input_size;
-      BLAS::sgemm_(&transB, &transA, &n, &m, &k, &alpha, W.GetData() + wo_offset, &k,
-         input, &k, &beta, ff_output_gate, &n);
-      // cell_gate = input * weight^T + bias
-      size_t wc_offset = direction * 4 * fHiddenSize * input_size +
-         3 * fHiddenSize * input_size;
-      BLAS::sgemm_(&transB, &transA, &n, &m, &k, &alpha, W.GetData() + wc_offset, &k,
-         input, &k, &beta, ff_cell_gate, &n);
-      // forget_gate = input * weight^T + bias
+      // InputGate = Input * W_i^T
+      size_t wiOffset = direction * 4 * fHiddenSize * inputSize;
+      BLAS::sgemm_(&transB, &transA, &n, &m, &k, &alpha, W.GetData() + wiOffset, &k,
+         Input, &k, &beta, FInputGate, &n);
+      // OutputGate = Input * W_o^T
+      size_t woOffset = direction * 4 * fHiddenSize * inputSize +
+         2 * fHiddenSize * inputSize;
+      BLAS::sgemm_(&transB, &transA, &n, &m, &k, &alpha, W.GetData() + woOffset, &k,
+         Input, &k, &beta, FOutputGate, &n);
+      // CellGate = Input * W_c^T
+      size_t wcOffset = direction * 4 * fHiddenSize * inputSize +
+         3 * fHiddenSize * inputSize;
+      BLAS::sgemm_(&transB, &transA, &n, &m, &k, &alpha, W.GetData() + wcOffset, &k,
+         Input, &k, &beta, FCellGate, &n);
+      // ForgetGate = Input * W_f^T
       if (fInputForget == 0) {
-         size_t wf_offset = direction * 4 * fHiddenSize * input_size +
-            fHiddenSize * input_size;
-         BLAS::sgemm_(&transB, &transA, &n, &m, &k, &alpha, W.GetData() + wf_offset, &k,
-            input, &k, &beta, ff_forget_gate, &n);
+         size_t wfOffset = direction * 4 * fHiddenSize * inputSize +
+            fHiddenSize * inputSize;
+         BLAS::sgemm_(&transB, &transA, &n, &m, &k, &alpha, W.GetData() + wfOffset, &k,
+            Input, &k, &beta, FForgetGate, &n);
       }
-      if (bias) {
-         int bias_size = seq_length * batch_size * fHiddenSize;
+      if (Bias) {
+         int biasSize = seqLength * batchSize * fHiddenSize;
          int incx = 1;
          int incy = 1;
-         // ff_input_gate += bias_i
-         size_t bi_offset = direction * seq_length * batch_size * fHiddenSize;
-         BLAS::saxpy_(&bias_size, &alpha, bias + bi_offset, &incx, ff_input_gate, &incy);
-         // ff_output_gate += bias_o
-         size_t bo_offset = 2 * num_directions * seq_length * batch_size * fHiddenSize
-            + direction * seq_length * batch_size * fHiddenSize;
-         BLAS::saxpy_(&bias_size, &alpha, bias + bo_offset, &incx, ff_output_gate, &incy);
-         // ff_cell_gate += bias_c
-         size_t bc_offset = 3 * num_directions * seq_length * batch_size * fHiddenSize
-            + direction * seq_length * batch_size * fHiddenSize;
-         BLAS::saxpy_(&bias_size, &alpha, bias + bc_offset, &incx, ff_cell_gate, &incy);
+         // FInputGate += Bias_i
+         size_t biOffset = direction * seqLength * batchSize * fHiddenSize;
+         BLAS::saxpy_(&biasSize, &alpha, Bias + biOffset, &incx, FInputGate, &incy);
+         // FOutputGate += Bias_o
+         size_t boOffset = 2 * numDirections * seqLength * batchSize * fHiddenSize
+            + direction * seqLength * batchSize * fHiddenSize;
+         BLAS::saxpy_(&biasSize, &alpha, Bias + boOffset, &incx, FOutputGate, &incy);
+         // FCellGate += Bias_c
+         size_t bcOffset = 3 * numDirections * seqLength * batchSize * fHiddenSize
+            + direction * seqLength * batchSize * fHiddenSize;
+         BLAS::saxpy_(&biasSize, &alpha, Bias + bcOffset, &incx, FCellGate, &incy);
+         // FForgetGate += Bias_f
          if (fInputForget == 0) {
-            // ff_forget_gate += bias_f
-            size_t bf_offset = num_directions * seq_length * batch_size * fHiddenSize
-               + direction * seq_length * batch_size * fHiddenSize;
-            BLAS::saxpy_(&bias_size, &alpha, bias + bf_offset, &incx, ff_forget_gate, &incy);
+            size_t bfOffset = numDirections * seqLength * batchSize * fHiddenSize
+               + direction * seqLength * batchSize * fHiddenSize;
+            BLAS::saxpy_(&biasSize, &alpha, Bias + bfOffset, &incx, FForgetGate, &incy);
          }
       }
-      // copy ff_input_gate, ff_output_gate and ff_cell_gate and ff_forget_gate into input_gate, output_gate,
-      //   cell_gate and forget_gate
-      for (size_t seq = 0; seq < seq_length; seq++) {
-         size_t ff_offset = seq * batch_size * fHiddenSize;
-         size_t ff_size = batch_size * fHiddenSize;
-         size_t gate_offset = seq * num_directions * batch_size * fHiddenSize +
-            direction * batch_size * fHiddenSize;
-         std::copy(ff_input_gate + ff_offset, ff_input_gate + ff_offset + ff_size,
-            input_gate + gate_offset);
-         std::copy(ff_output_gate + ff_offset, ff_output_gate + ff_offset + ff_size,
-            output_gate + gate_offset);
-         std::copy(ff_cell_gate + ff_offset, ff_cell_gate + ff_offset + ff_size,
-            cell_gate + gate_offset);
+      // Copy FInputGate, FOutputGate and FCellGate and FForgetGate into InputGate, OutputGate,
+      //    CellGate and ForgetGate
+      for (size_t seq = 0; seq < seqLength; seq++) {
+         size_t ffOffset = seq * batchSize * fHiddenSize;
+         size_t ffSize = batchSize * fHiddenSize;
+         size_t gateOffset = seq * numDirections * batchSize * fHiddenSize +
+            direction * batchSize * fHiddenSize;
+         std::copy(FInputGate + ffOffset, FInputGate + ffOffset + ffSize, InputGate + gateOffset);
+         std::copy(FOutputGate + ffOffset, FOutputGate + ffOffset + ffSize, OutputGate + gateOffset);
+         std::copy(FCellGate + ffOffset, FCellGate + ffOffset + ffSize, CellGate + gateOffset);
          if (fInputForget == 0) {
-            std::copy(ff_forget_gate + ff_offset, ff_forget_gate + ff_offset + ff_size,
-               forget_gate + gate_offset);
+            std::copy(FForgetGate + ffOffset, FForgetGate + ffOffset + ffSize, ForgetGate + gateOffset);
          }
       }
 
       bool backward = (fDirection == "backward") || (direction == 1);
-      for (size_t seq = 0; seq < seq_length; seq++) {
-         size_t index = backward ? seq_length - 1 - seq : seq;
-         int m2 = batch_size;
-         size_t offset = index * num_directions * batch_size * fHiddenSize
-            + direction * batch_size * fHiddenSize;
-         size_t size = batch_size * fHiddenSize;
-         // gate = 1.0 * gate + previous_hidden_state * R^T
+      for (size_t seq = 0; seq < seqLength; seq++) {
+         size_t index = backward ? seqLength - 1 - seq : seq;
+         int m2 = batchSize;
+         size_t offset = index * numDirections * batchSize * fHiddenSize
+            + direction * batchSize * fHiddenSize;
+         size_t size = batchSize * fHiddenSize;
          if (seq == 0) {
-            if (initial_hidden_state) {
-               size_t initial_h_offset = direction * batch_size * fHiddenSize;
-               size_t ri_offset = direction * 4 * fHiddenSize * fHiddenSize;
-               BLAS::sgemm_(&transB, &transA, &n, &m2, &n, &alpha, R.GetData() + ri_offset, &n,
-                  initial_hidden_state + initial_h_offset, &n, &alpha, input_gate + offset, &n);
-               size_t ro_offset = direction * 4 * fHiddenSize * fHiddenSize +
+            if (InitialHiddenState) {
+               size_t initialhOffset = direction * batchSize * fHiddenSize;
+               // InputGate += InitialHiddenState * R_i^T
+               size_t riOffset = direction * 4 * fHiddenSize * fHiddenSize;
+               BLAS::sgemm_(&transB, &transA, &n, &m2, &n, &alpha, R.GetData() + riOffset, &n,
+                  InitialHiddenState + initialhOffset, &n, &alpha, InputGate + offset, &n);
+               // OutputGate += InitialHiddenState * R_o^T
+               size_t roOffset = direction * 4 * fHiddenSize * fHiddenSize +
                   2 * fHiddenSize * fHiddenSize;
-               BLAS::sgemm_(&transB, &transA, &n, &m2, &n, &alpha, R.GetData() + ro_offset, &n,
-                  initial_hidden_state + initial_h_offset, &n, &alpha, output_gate + offset, &n);
-               size_t rc_offset = direction * 4 * fHiddenSize * fHiddenSize +
+               BLAS::sgemm_(&transB, &transA, &n, &m2, &n, &alpha, R.GetData() + roOffset, &n,
+                  InitialHiddenState + initialhOffset, &n, &alpha, OutputGate + offset, &n);
+               // CellGate += InitialHiddenState * R_c^T
+               size_t rcOffset = direction * 4 * fHiddenSize * fHiddenSize +
                   3 * fHiddenSize * fHiddenSize;
-               BLAS::sgemm_(&transB, &transA, &n, &m2, &n, &alpha, R.GetData() + rc_offset, &n,
-                  initial_hidden_state + initial_h_offset, &n, &alpha, cell_gate + offset, &n);
+               BLAS::sgemm_(&transB, &transA, &n, &m2, &n, &alpha, R.GetData() + rcOffset, &n,
+                  InitialHiddenState + initialhOffset, &n, &alpha, CellGate + offset, &n);
+               // ForgetGate += InitialHiddenState * R_f^T
                if (fInputForget == 0) {
-                  size_t rf_offset = direction * 4 * fHiddenSize * fHiddenSize +
+                  size_t rfOffset = direction * 4 * fHiddenSize * fHiddenSize +
                      fHiddenSize * fHiddenSize;
-                  BLAS::sgemm_(&transB, &transA, &n, &m2, &n, &alpha, R.GetData() + rf_offset, &n,
-                     initial_hidden_state + initial_h_offset, &n, &alpha, forget_gate + offset, &n);
+                  BLAS::sgemm_(&transB, &transA, &n, &m2, &n, &alpha, R.GetData() + rfOffset, &n,
+                     InitialHiddenState + initialhOffset, &n, &alpha, ForgetGate + offset, &n);
                }
             }
          } else {
-            size_t previous_offset = (backward ? (index + 1) : (seq - 1)) * num_directions * batch_size *
-               fHiddenSize + direction * batch_size * fHiddenSize;
-            size_t ri_offset = direction * 4 * fHiddenSize * fHiddenSize;
-            BLAS::sgemm_(&transB, &transA, &n, &m2, &n, &alpha, R.GetData() + ri_offset, &n,
-               hidden_state + previous_offset, &n, &alpha, input_gate + offset, &n);
-            size_t ro_offset = direction * 4 * fHiddenSize * fHiddenSize +
+            size_t previousOffset = (backward ? (index + 1) : (seq - 1)) * numDirections * batchSize *
+               fHiddenSize + direction * batchSize * fHiddenSize;
+            // InputGate += PreviousHiddenState * R_i^T
+            size_t riOffset = direction * 4 * fHiddenSize * fHiddenSize;
+            BLAS::sgemm_(&transB, &transA, &n, &m2, &n, &alpha, R.GetData() + riOffset, &n,
+               HiddenState + previousOffset, &n, &alpha, InputGate + offset, &n);
+            // OutputGate += PreviousHiddenState * R_o^T
+            size_t roOffset = direction * 4 * fHiddenSize * fHiddenSize +
                2 * fHiddenSize * fHiddenSize;
-            BLAS::sgemm_(&transB, &transA, &n, &m2, &n, &alpha, R.GetData() + ro_offset, &n,
-               hidden_state + previous_offset, &n, &alpha, output_gate + offset, &n);
-            size_t rc_offset = direction * 4 * fHiddenSize * fHiddenSize +
+            BLAS::sgemm_(&transB, &transA, &n, &m2, &n, &alpha, R.GetData() + roOffset, &n,
+               HiddenState + previousOffset, &n, &alpha, OutputGate + offset, &n);
+            // CellGate += PreviousHiddenState * R_c^T
+            size_t rcOffset = direction * 4 * fHiddenSize * fHiddenSize +
                3 * fHiddenSize * fHiddenSize;
-            BLAS::sgemm_(&transB, &transA, &n, &m2, &n, &alpha, R.GetData() + rc_offset, &n,
-               hidden_state + previous_offset, &n, &alpha, cell_gate + offset, &n);
+            BLAS::sgemm_(&transB, &transA, &n, &m2, &n, &alpha, R.GetData() + rcOffset, &n,
+               HiddenState + previousOffset, &n, &alpha, CellGate + offset, &n);
+            // ForgetGate += PreviousHiddenState * R_f^T
             if (fInputForget == 0) {
-               size_t rf_offset = direction * 4 * fHiddenSize * fHiddenSize +
+               size_t rfOffset = direction * 4 * fHiddenSize * fHiddenSize +
                   fHiddenSize * fHiddenSize;
-               BLAS::sgemm_(&transB, &transA, &n, &m2, &n, &alpha, R.GetData() + rf_offset, &n,
-                  hidden_state + previous_offset, &n, &alpha, forget_gate + offset, &n);
+               BLAS::sgemm_(&transB, &transA, &n, &m2, &n, &alpha, R.GetData() + rfOffset, &n,
+                  HiddenState + previousOffset, &n, &alpha, ForgetGate + offset, &n);
             }
          }
          // Clip the elements of the cell gate into the range [-fClip, fClip]
          if (fClip > 0.) {
             for (size_t i = offset; i < offset + size; i++) {
-               T x = (cell_gate[i] > -fClip) ? cell_gate[i] : -fClip;
-               cell_gate[i] = (x < fClip)? x : fClip;
+               T x = (CellGate[i] > -fClip) ? CellGate[i] : -fClip;
+               CellGate[i] = (x < fClip)? x : fClip;
             }
          }
-         // Apply the activation function to the cell gate, cell_gate = g(cell_gate)
+         // Apply the activation function to the cell gate
          if (fActivations[direction * 3 + 1] == "Relu") {
             for (size_t i = offset; i < offset + size; i++) {
-               if (cell_gate[i] < 0.)
-                  cell_gate[i] = 0.;
+               if (CellGate[i] < 0.)
+                  CellGate[i] = 0.;
             }
          } else if (fActivations[direction * 3 + 1] == "Tanh") {
             for (size_t i = offset; i < offset + size; i++) {
-               float ex = exp(-2 * cell_gate[i]);
-               cell_gate[i] = (1. - ex) / (1. + ex);
+               float ex = exp(-2 * CellGate[i]);
+               CellGate[i] = (1. - ex) / (1. + ex);
             }
          } else if (fActivations[direction * 3 + 1] == "Sigmoid") {
             for (size_t i = offset; i < offset + size; i++) {
-               cell_gate[i] = 1. / (1. + exp(-cell_gate[i]));
+               CellGate[i] = 1. / (1. + exp(-CellGate[i]));
             }
          } else if (fActivations[direction * 3 + 1] == "Affine") {
             for (size_t i = offset; i < offset + size; i++) {
-               cell_gate[i] = fActivationAlpha[direction * 3 + 1] * cell_gate[i]
+               CellGate[i] = fActivationAlpha[direction * 3 + 1] * CellGate[i]
                   + fActivationBeta[direction * 3 + 1];
             }
          } else if (fActivations[direction * 3 + 1] == "LeakyRelu") {
             for (size_t i = offset; i < offset + size; i++) {
-               if (cell_gate[i] < 0.) {
-                  cell_gate[i] = fActivationAlpha[direction * 3 + 1] * cell_gate[i];
+               if (CellGate[i] < 0.) {
+                  CellGate[i] = fActivationAlpha[direction * 3 + 1] * CellGate[i];
                }
             }
          } else if (fActivations[direction * 3 + 1] == "ThresholdRelu") {
             for (size_t i = offset; i < offset + size; i++) {
-               if (cell_gate[i] < fActivationAlpha[direction * 3 + 1]) {
-                  cell_gate[i] = 0.;
+               if (CellGate[i] < fActivationAlpha[direction * 3 + 1]) {
+                  CellGate[i] = 0.;
                }
             }
          } else if (fActivations[direction * 3 + 1] == "ScaledTanh") {
             for (size_t i = offset; i < offset + size; i++) {
-               float x = exp(-2 * fActivationBeta[direction * 3 + 1] * cell_gate[i]);
-               cell_gate[i] = fActivationAlpha[direction * 3 + 1] * (1. - x) / (1. + x);
+               float x = exp(-2 * fActivationBeta[direction * 3 + 1] * CellGate[i]);
+               CellGate[i] = fActivationAlpha[direction * 3 + 1] * (1. - x) / (1. + x);
             }
          } else if (fActivations[direction * 3 + 1] == "HardSigmoid") {
             for (size_t i = offset; i < offset + size; i++) {
-               float a = fActivationAlpha[direction * 3 + 1] * cell_gate[i] + fActivationBeta[direction * 3 + 1];
+               float a = fActivationAlpha[direction * 3 + 1] * CellGate[i] + fActivationBeta[direction * 3 + 1];
                float b = (a > 0.) ? a : 0.;
-               cell_gate[i] = (b < 1.) ? b : 1.;
+               CellGate[i] = (b < 1.) ? b : 1.;
             }
          } else if (fActivations[direction * 3 + 1] == "Elu") {
             for (size_t i = offset; i < offset + size; i++) {
-               if (cell_gate[i] < 0.) {
-                  cell_gate[i] = fActivationAlpha[direction * 3 + 1] * (exp(cell_gate[i] - 1.));
+               if (CellGate[i] < 0.) {
+                  CellGate[i] = fActivationAlpha[direction * 3 + 1] * (exp(CellGate[i] - 1.));
                }
             }
          } else if (fActivations[direction * 3 + 1] == "Softsign") {
             for (size_t i = offset; i < offset + size; i++) {
-               cell_gate[i] = cell_gate[i] / (1. + abs(new_cell_state[i]));
+               CellGate[i] = CellGate[i] / (1. + abs(NewCellState[i]));
             }
          } else { // Softplus
             for (size_t i = offset; i < offset + size; i++) {
-               cell_gate[i] = log(1. + exp(cell_gate[i]));
+               CellGate[i] = log(1. + exp(CellGate[i]));
             }
          }
          // Peephole connections for the input gate and the forget gate
-         if (peephole) {
-            // gate = 1.0 * gate + previous_cell_state * P^T
+         if (Peephole) {
             if (seq == 0) {
-               if (initial_cell_state) {
-                  size_t pi_offset = direction * 3 * batch_size * fHiddenSize;
-                  size_t initial_c_offset = direction * batch_size * fHiddenSize;
+               if (InitialCellState) {
+                  size_t initialcOffset = direction * batchSize * fHiddenSize;
+                  size_t piOffset = direction * 3 * batchSize * fHiddenSize;
+                  // InputGate += InitialCellState o Peephole_i
                   for (size_t i = 0; i < size; i++) {
-                     input_gate[i + offset] += peephole[i + pi_offset] * initial_cell_state[i + initial_c_offset];
+                     InputGate[i + offset] += InitialCellState[i + initialcOffset] * Peephole[i + piOffset];
                   }
+                  // ForgetGate += InitialCellState o Peephole_f
                   if (fInputForget == 0) {
-                     size_t pf_offset = direction * 3 * batch_size * fHiddenSize +
-                        batch_size * fHiddenSize;
+                     size_t pfOffset = direction * 3 * batchSize * fHiddenSize +
+                        batchSize * fHiddenSize;
                      for (size_t i = 0; i < size; i++) {
-                        forget_gate[i + offset] += peephole[i + pf_offset] * initial_cell_state[i + initial_c_offset];
+                        ForgetGate[i + offset] += InitialCellState[i + initialcOffset] * Peephole[i + pfOffset];
                      }
                   }
                }
             } else {
-               size_t pi_offset = direction * 3 * batch_size * fHiddenSize;
-               size_t c_offset = (backward ? (index + 1) : (seq - 1)) * num_directions * batch_size *
-                  fHiddenSize + direction * batch_size * fHiddenSize;
+               size_t cOffset = (backward ? (index + 1) : (seq - 1)) * numDirections * batchSize *
+                  fHiddenSize + direction * batchSize * fHiddenSize;
+               size_t piOffset = direction * 3 * batchSize * fHiddenSize;
+               // InputGate += CellState o Peephole_i
                for (size_t i = 0; i < size; i++) {
-                  input_gate[i + offset] += peephole[i + pi_offset] * cell_state[i + c_offset];
+                  InputGate[i + offset] += CellState[i + cOffset] * Peephole[i + piOffset];
                }
+               // ForgetGate += CellState o Peephole_f
                if (fInputForget == 0) {
-                  size_t pf_offset = direction * 3 * batch_size * fHiddenSize +
-                     batch_size * fHiddenSize;
+                  size_t pfOffset = direction * 3 * batchSize * fHiddenSize +
+                     batchSize * fHiddenSize;
                   for (size_t i = 0; i < size; i++) {
-                     forget_gate[i + offset] += peephole[i + pf_offset] * cell_state[i + c_offset];
+                     ForgetGate[i + offset] += CellState[i + cOffset] * Peephole[i + pfOffset];
                   }
                }
             }
@@ -454,66 +460,66 @@ void ROperatorLSTM<T>::Forward_blas(RTensor<T> &X,
          // Clip the elements of the input gate into the range [-fClip, fClip]
          if (fClip > 0.) {
             for (size_t i = offset; i < offset + size; i++) {
-               T x = (input_gate[i] > -fClip) ? input_gate[i] : -fClip;
-               input_gate[i] = (x < fClip)? x : fClip;
+               T x = (InputGate[i] > -fClip) ? InputGate[i] : -fClip;
+               InputGate[i] = (x < fClip)? x : fClip;
             }
          }
          // Apply the activation function to the input gate
          if (fActivations[direction * 3] == "Relu") {
             for (size_t i = offset; i < offset + size; i++) {
-               if (input_gate[i] < 0.)
-                  input_gate[i] = 0.;
+               if (InputGate[i] < 0.)
+                  InputGate[i] = 0.;
             }
          } else if (fActivations[direction * 3] == "Tanh") {
             for (size_t i = offset; i < offset + size; i++) {
-               float ex = exp(-2 * input_gate[i]);
-               input_gate[i] = (1. - ex) / (1. + ex);
+               float ex = exp(-2 * InputGate[i]);
+               InputGate[i] = (1. - ex) / (1. + ex);
             }
          } else if (fActivations[direction * 3] == "Sigmoid") {
             for (size_t i = offset; i < offset + size; i++) {
-               input_gate[i] = 1. / (1. + exp(-input_gate[i]));
+               InputGate[i] = 1. / (1. + exp(-InputGate[i]));
             }
          } else if (fActivations[direction * 3] == "Affine") {
             for (size_t i = offset; i < offset + size; i++) {
-               input_gate[i] = fActivationAlpha[direction * 3] * input_gate[i]
+               InputGate[i] = fActivationAlpha[direction * 3] * InputGate[i]
                   + fActivationBeta[direction * 3];
             }
          } else if (fActivations[direction * 3] == "LeakyRelu") {
             for (size_t i = offset; i < offset + size; i++) {
-               if (input_gate[i] < 0.) {
-                  input_gate[i] = fActivationAlpha[direction * 3] * input_gate[i];
+               if (InputGate[i] < 0.) {
+                  InputGate[i] = fActivationAlpha[direction * 3] * InputGate[i];
                }
             }
          } else if (fActivations[direction * 3] == "ThresholdRelu") {
             for (size_t i = offset; i < offset + size; i++) {
-               if (input_gate[i] < fActivationAlpha[direction * 3]) {
-                  input_gate[i] = 0.;
+               if (InputGate[i] < fActivationAlpha[direction * 3]) {
+                  InputGate[i] = 0.;
                }
             }
          } else if (fActivations[direction * 3] == "ScaledTanh") {
             for (size_t i = offset; i < offset + size; i++) {
-               float x = exp(-2 * fActivationBeta[direction * 3] * input_gate[i]);
-               input_gate[i] = fActivationAlpha[direction * 3] * (1. - x) / (1. + x);
+               float x = exp(-2 * fActivationBeta[direction * 3] * InputGate[i]);
+               InputGate[i] = fActivationAlpha[direction * 3] * (1. - x) / (1. + x);
             }
          } else if (fActivations[direction * 3] == "HardSigmoid") {
             for (size_t i = offset; i < offset + size; i++) {
-               float a = fActivationAlpha[direction * 3] * input_gate[i] + fActivationBeta[direction * 3];
+               float a = fActivationAlpha[direction * 3] * InputGate[i] + fActivationBeta[direction * 3];
                float b = (a > 0.) ? a : 0.;
-               input_gate[i] = (b < 1.) ? b : 1.;
+               InputGate[i] = (b < 1.) ? b : 1.;
             }
          } else if (fActivations[direction * 3] == "Elu") {
             for (size_t i = offset; i < offset + size; i++) {
-               if (input_gate[i] < 0.) {
-                  input_gate[i] = fActivationAlpha[direction * 3] * (exp(input_gate[i] - 1.));
+               if (InputGate[i] < 0.) {
+                  InputGate[i] = fActivationAlpha[direction * 3] * (exp(InputGate[i] - 1.));
                }
             }
          } else if (fActivations[direction * 3] == "Softsign") {
             for (size_t i = offset; i < offset + size; i++) {
-               input_gate[i] = input_gate[i] / (1. + abs(new_cell_state[i]));
+               InputGate[i] = InputGate[i] / (1. + abs(NewCellState[i]));
             }
          } else { // Softplus
             for (size_t i = offset; i < offset + size; i++) {
-               input_gate[i] = log(1. + exp(input_gate[i]));
+               InputGate[i] = log(1. + exp(InputGate[i]));
             }
          }
 
@@ -521,248 +527,248 @@ void ROperatorLSTM<T>::Forward_blas(RTensor<T> &X,
             // Clip the elements of the forget gate into the range [-fClip, fClip]
             if (fClip > 0.) {
                for (size_t i = offset; i < offset + size; i++) {
-                  T x = (forget_gate[i] > -fClip) ? forget_gate[i] : -fClip;
-                  forget_gate[i] = (x < fClip)? x : fClip;
+                  T x = (ForgetGate[i] > -fClip) ? ForgetGate[i] : -fClip;
+                  ForgetGate[i] = (x < fClip)? x : fClip;
                }
             }
             // Apply the activation function to the forget gate
             if (fActivations[direction * 3] == "Relu") {
                for (size_t i = offset; i < offset + size; i++) {
-                  if (forget_gate[i] < 0.)
-                     forget_gate[i] = 0.;
+                  if (ForgetGate[i] < 0.)
+                     ForgetGate[i] = 0.;
                }
             } else if (fActivations[direction * 3] == "Tanh") {
                for (size_t i = offset; i < offset + size; i++) {
-                  float ex = exp(-2 * forget_gate[i]);
-                  forget_gate[i] = (1. - ex) / (1. + ex);
+                  float ex = exp(-2 * ForgetGate[i]);
+                  ForgetGate[i] = (1. - ex) / (1. + ex);
                }
             } else if (fActivations[direction * 3] == "Sigmoid") {
                for (size_t i = offset; i < offset + size; i++) {
-                  forget_gate[i] = 1. / (1. + exp(-forget_gate[i]));
+                  ForgetGate[i] = 1. / (1. + exp(-ForgetGate[i]));
                }
             } else if (fActivations[direction * 3] == "Affine") {
                for (size_t i = offset; i < offset + size; i++) {
-                  forget_gate[i] = fActivationAlpha[direction * 3] * forget_gate[i]
+                  ForgetGate[i] = fActivationAlpha[direction * 3] * ForgetGate[i]
                      + fActivationBeta[direction * 3];
                }
             } else if (fActivations[direction * 3] == "LeakyRelu") {
                for (size_t i = offset; i < offset + size; i++) {
-                  if (forget_gate[i] < 0.) {
-                     forget_gate[i] = fActivationAlpha[direction * 3] * forget_gate[i];
+                  if (ForgetGate[i] < 0.) {
+                     ForgetGate[i] = fActivationAlpha[direction * 3] * ForgetGate[i];
                   }
                }
             } else if (fActivations[direction * 3] == "ThresholdRelu") {
                for (size_t i = offset; i < offset + size; i++) {
-                  if (forget_gate[i] < fActivationAlpha[direction * 3]) {
-                     forget_gate[i] = 0.;
+                  if (ForgetGate[i] < fActivationAlpha[direction * 3]) {
+                     ForgetGate[i] = 0.;
                   }
                }
             } else if (fActivations[direction * 3] == "ScaledTanh") {
                for (size_t i = offset; i < offset + size; i++) {
-                  float x = exp(-2 * fActivationBeta[direction * 3] * forget_gate[i]);
-                  forget_gate[i] = fActivationAlpha[direction * 3] * (1. - x) / (1. + x);
+                  float x = exp(-2 * fActivationBeta[direction * 3] * ForgetGate[i]);
+                  ForgetGate[i] = fActivationAlpha[direction * 3] * (1. - x) / (1. + x);
                }
             } else if (fActivations[direction * 3] == "HardSigmoid") {
                for (size_t i = offset; i < offset + size; i++) {
-                  float a = fActivationAlpha[direction * 3] * forget_gate[i] + fActivationBeta[direction * 3];
+                  float a = fActivationAlpha[direction * 3] * ForgetGate[i] + fActivationBeta[direction * 3];
                   float b = (a > 0.) ? a : 0.;
-                  forget_gate[i] = (b < 1.) ? b : 1.;
+                  ForgetGate[i] = (b < 1.) ? b : 1.;
                }
             } else if (fActivations[direction * 3] == "Elu") {
                for (size_t i = offset; i < offset + size; i++) {
-                  if (forget_gate[i] < 0.) {
-                     forget_gate[i] = fActivationAlpha[direction * 3] * (exp(forget_gate[i] - 1.));
+                  if (ForgetGate[i] < 0.) {
+                     ForgetGate[i] = fActivationAlpha[direction * 3] * (exp(ForgetGate[i] - 1.));
                   }
                }
             } else if (fActivations[direction * 3] == "Softsign") {
                for (size_t i = offset; i < offset + size; i++) {
-                  forget_gate[i] = forget_gate[i] / (1. + abs(new_cell_state[i]));
+                  ForgetGate[i] = ForgetGate[i] / (1. + abs(NewCellState[i]));
                }
             } else { // Softplus
                for (size_t i = offset; i < offset + size; i++) {
-                  forget_gate[i] = log(1. + exp(forget_gate[i]));
+                  ForgetGate[i] = log(1. + exp(ForgetGate[i]));
                }
             }
          }
-         // cell_state = input_gate o cell_gate
+         // CellState = InputGate o CellGate
          for (size_t i = offset; i < offset + size; i++) {
-            cell_state[i] = input_gate[i] * cell_gate[i];
+            CellState[i] = InputGate[i] * CellGate[i];
          }
          if (fInputForget == 0) {
             if (seq == 0) {
-               if (initial_cell_state) {
-                  // cell_state += forget_gate o initial_cell_state
+               // CellState += ForgetGate o InitialCellState
+               if (InitialCellState) {
                   for (size_t i = 0; i < size; i++) {
-                     cell_state[i + offset] += forget_gate[i + offset] * initial_cell_state[i];
+                     CellState[i + offset] += ForgetGate[i + offset] * InitialCellState[i];
                   }
                }
             } else {
-               // cell_state += forget_gate o previous_cell_state
-               size_t previous_offset = (backward ? (index + 1) : (seq - 1)) * num_directions * batch_size *
-                  fHiddenSize + direction * batch_size * fHiddenSize;
+               // CellState += ForgetGate o PreviousCellState
+               size_t previousOffset = (backward ? (index + 1) : (seq - 1)) * numDirections * batchSize *
+                  fHiddenSize + direction * batchSize * fHiddenSize;
                for (size_t i = 0; i < size; i++) {
-                  cell_state[i + offset] += forget_gate[i + offset] * cell_state[i + previous_offset];
+                  CellState[i + offset] += ForgetGate[i + offset] * CellState[i + previousOffset];
                }
             }
          }
-         if (peephole) {
-            // Peephole connection for the output gate
-            size_t p_offset = direction * 3 * batch_size * fHiddenSize +
-               2 * batch_size * fHiddenSize;
+         if (Peephole) {
+            // OutputGate += CellState o Peehole_o
+            size_t pOffset = direction * 3 * batchSize * fHiddenSize +
+               2 * batchSize * fHiddenSize;
             for (size_t i = 0; i < size; i++) {
-               output_gate[i + offset] += peephole[i + p_offset] * cell_state[i + offset];
+               OutputGate[i + offset] += CellState[i + offset] * Peephole[i + pOffset];
             }
          }
          // Clip the elements of the output gate into the range [-fClip, fClip]
          if (fClip > 0.) {
             for (size_t i = offset; i < offset + size; i++) {
-               T x = (output_gate[i] > -fClip) ? output_gate[i] : -fClip;
-               output_gate[i] = (x < fClip)? x : fClip;
+               T x = (OutputGate[i] > -fClip) ? OutputGate[i] : -fClip;
+               OutputGate[i] = (x < fClip)? x : fClip;
             }
          }
-         // Apply the activation function to the output gate, output_gate = f(output_gate)
+         // Apply the activation function to the output gate
          if (fActivations[direction * 3] == "Relu") {
             for (size_t i = offset; i < offset + size; i++) {
-               if (output_gate[i] < 0.)
-                  output_gate[i] = 0.;
+               if (OutputGate[i] < 0.)
+                  OutputGate[i] = 0.;
             }
          } else if (fActivations[direction * 3] == "Tanh") {
             for (size_t i = offset; i < offset + size; i++) {
-               float ex = exp(-2 * output_gate[i]);
-               output_gate[i] = (1. - ex) / (1. + ex);
+               float ex = exp(-2 * OutputGate[i]);
+               OutputGate[i] = (1. - ex) / (1. + ex);
             }
          } else if (fActivations[direction * 3] == "Sigmoid") {
             for (size_t i = offset; i < offset + size; i++) {
-               output_gate[i] = 1. / (1. + exp(-output_gate[i]));
+               OutputGate[i] = 1. / (1. + exp(-OutputGate[i]));
             }
          } else if (fActivations[direction * 3] == "Affine") {
             for (size_t i = offset; i < offset + size; i++) {
-               output_gate[i] = fActivationAlpha[direction * 3] * output_gate[i]
+               OutputGate[i] = fActivationAlpha[direction * 3] * OutputGate[i]
                   + fActivationBeta[direction * 3];
             }
          } else if (fActivations[direction * 3] == "LeakyRelu") {
             for (size_t i = offset; i < offset + size; i++) {
-               if (output_gate[i] < 0.) {
-                  output_gate[i] = fActivationAlpha[direction * 3] * output_gate[i];
+               if (OutputGate[i] < 0.) {
+                  OutputGate[i] = fActivationAlpha[direction * 3] * OutputGate[i];
                }
             }
          } else if (fActivations[direction * 3] == "ThresholdRelu") {
             for (size_t i = offset; i < offset + size; i++) {
-               if (output_gate[i] < fActivationAlpha[direction * 3]) {
-                  output_gate[i] = 0.;
+               if (OutputGate[i] < fActivationAlpha[direction * 3]) {
+                  OutputGate[i] = 0.;
                }
             }
          } else if (fActivations[direction * 3] == "ScaledTanh") {
             for (size_t i = offset; i < offset + size; i++) {
-               float x = exp(-2 * fActivationBeta[direction * 3] * output_gate[i]);
-               output_gate[i] = fActivationAlpha[direction * 3] * (1. - x) / (1. + x);
+               float x = exp(-2 * fActivationBeta[direction * 3] * OutputGate[i]);
+               OutputGate[i] = fActivationAlpha[direction * 3] * (1. - x) / (1. + x);
             }
          } else if (fActivations[direction * 3] == "HardSigmoid") {
             for (size_t i = offset; i < offset + size; i++) {
-               float a = fActivationAlpha[direction * 3] * output_gate[i] + fActivationBeta[direction * 3];
+               float a = fActivationAlpha[direction * 3] * OutputGate[i] + fActivationBeta[direction * 3];
                float b = (a > 0.) ? a : 0.;
-               output_gate[i] = (b < 1.) ? b : 1.;
+               OutputGate[i] = (b < 1.) ? b : 1.;
             }
          } else if (fActivations[direction * 3] == "Elu") {
             for (size_t i = offset; i < offset + size; i++) {
-               if (output_gate[i] < 0.) {
-                  output_gate[i] = fActivationAlpha[direction * 3] * (exp(output_gate[i] - 1.));
+               if (OutputGate[i] < 0.) {
+                  OutputGate[i] = fActivationAlpha[direction * 3] * (exp(OutputGate[i] - 1.));
                }
             }
          } else if (fActivations[direction * 3] == "Softsign") {
             for (size_t i = offset; i < offset + size; i++) {
-               output_gate[i] = output_gate[i] / (1. + abs(new_cell_state[i]));
+               OutputGate[i] = OutputGate[i] / (1. + abs(NewCellState[i]));
             }
          } else { // Softplus
             for (size_t i = offset; i < offset + size; i++) {
-               output_gate[i] = log(1. + exp(output_gate[i]));
+               OutputGate[i] = log(1. + exp(OutputGate[i]));
             }
          }
-         // copy cell_state into new_cell_state
-         std::copy(cell_state + offset, cell_state + offset + size, new_cell_state + offset);
-         // Clip the elements of new_cell_state into the range [-fClip, fClip]
+         // Copy CellState into NewCellState
+         std::copy(CellState + offset, CellState + offset + size, NewCellState + offset);
+         // Clip the elements of NewCellState into the range [-fClip, fClip]
          if (fClip > 0.) {
             for (size_t i = offset; i < offset + size; i++) {
-               T x = (new_cell_state[i] > -fClip) ? new_cell_state[i] : -fClip;
-               new_cell_state[i] = (x < fClip) ? x : fClip;
+               T x = (NewCellState[i] > -fClip) ? NewCellState[i] : -fClip;
+               NewCellState[i] = (x < fClip) ? x : fClip;
             }
          }
-         // new_cell_state = h(new_cell_state)
+         // Apply the activation function to NewCellState
          if (fActivations[direction * 3 + 2] == "Relu") {
             for (size_t i = offset; i < offset + size; i++) {
-               if (new_cell_state[i] < 0.)
-                  new_cell_state[i] = 0.;
+               if (NewCellState[i] < 0.)
+                  NewCellState[i] = 0.;
             }
          } else if (fActivations[direction * 3 + 2] == "Tanh") {
             for (size_t i = offset; i < offset + size; i++) {
-               float ex = exp(-2 * new_cell_state[i]);
-               new_cell_state[i] = (1. - ex) / (1. + ex);
+               float ex = exp(-2 * NewCellState[i]);
+               NewCellState[i] = (1. - ex) / (1. + ex);
             }
          } else if (fActivations[direction * 3 + 2] == "Sigmoid") {
             for (size_t i = offset; i < offset + size; i++) {
-               new_cell_state[i] = 1. / (1. + exp(-new_cell_state[i]));
+               NewCellState[i] = 1. / (1. + exp(-NewCellState[i]));
             }
          } else if (fActivations[direction * 3 + 2] == "Affine") {
             for (size_t i = offset; i < offset + size; i++) {
-               new_cell_state[i] = fActivationAlpha[direction * 3 + 2] * new_cell_state[i]
+               NewCellState[i] = fActivationAlpha[direction * 3 + 2] * NewCellState[i]
                   + fActivationBeta[direction * 3 + 2];
             }
          } else if (fActivations[direction * 3 + 2] == "LeakyRelu") {
             for (size_t i = offset; i < offset + size; i++) {
-               if (new_cell_state[i] < 0.) {
-                  new_cell_state[i] = fActivationAlpha[direction * 3 + 2] * new_cell_state[i];
+               if (NewCellState[i] < 0.) {
+                  NewCellState[i] = fActivationAlpha[direction * 3 + 2] * NewCellState[i];
                }
             }
          } else if (fActivations[direction * 3 + 2] == "ThresholdRelu") {
             for (size_t i = offset; i < offset + size; i++) {
-               if (new_cell_state[i] < fActivationAlpha[direction * 3 + 2]) {
-                  new_cell_state[i] = 0.;
+               if (NewCellState[i] < fActivationAlpha[direction * 3 + 2]) {
+                  NewCellState[i] = 0.;
                }
             }
          } else if (fActivations[direction * 3 + 2] == "ScaledTanh") {
             for (size_t i = offset; i < offset + size; i++) {
-               float x = exp(-2 * fActivationBeta[direction * 3 + 2] * new_cell_state[i]);
-               new_cell_state[i] = fActivationAlpha[direction * 3 + 2] * (1. - x) / (1. + x);
+               float x = exp(-2 * fActivationBeta[direction * 3 + 2] * NewCellState[i]);
+               NewCellState[i] = fActivationAlpha[direction * 3 + 2] * (1. - x) / (1. + x);
             }
          } else if (fActivations[direction * 3 + 2] == "HardSigmoid") {
             for (size_t i = offset; i < offset + size; i++) {
-               float a = fActivationAlpha[direction * 3 + 2] * new_cell_state[i] + fActivationBeta[direction * 3 + 2];
+               float a = fActivationAlpha[direction * 3 + 2] * NewCellState[i] + fActivationBeta[direction * 3 + 2];
                float b = (a > 0.) ? a : 0.;
-               new_cell_state[i] = (b < 1.) ? b : 1.;
+               NewCellState[i] = (b < 1.) ? b : 1.;
             }
          } else if (fActivations[direction * 3 + 2] == "Elu") {
             for (size_t i = offset; i < offset + size; i++) {
-               if (new_cell_state[i] < 0.) {
-                  new_cell_state[i] = fActivationAlpha[direction * 3 + 2] * (exp(new_cell_state[i] - 1.));
+               if (NewCellState[i] < 0.) {
+                  NewCellState[i] = fActivationAlpha[direction * 3 + 2] * (exp(NewCellState[i] - 1.));
                }
             }
          } else if (fActivations[direction * 3 + 2] == "Softsign") {
             for (size_t i = offset; i < offset + size; i++) {
-               new_cell_state[i] = new_cell_state[i] / (1. + abs(new_cell_state[i]));
+               NewCellState[i] = NewCellState[i] / (1. + abs(NewCellState[i]));
             }
          } else { // Softplus
             for (size_t i = offset; i < offset + size; i++) {
-               new_cell_state[i] = log(1. + exp(new_cell_state[i]));
+               NewCellState[i] = log(1. + exp(NewCellState[i]));
             }
          }
-         // hidden_state = output_gate o new_cell_state
+         // HiddenState = OutputGate o NewCellState
          for (size_t i = offset; i < offset + size; i++) {
-            hidden_state[i] = output_gate[i] * new_cell_state[i];
+            HiddenState[i] = OutputGate[i] * NewCellState[i];
          }
       }
    }
 
    // LSTM with different sequence lengths
    if (sequence_lens.GetShape().size() > 0) {
-      for (size_t seq = 0; seq < seq_length; seq++) {
-         for (size_t batch = 0; batch < batch_size; batch++) {
+      for (size_t seq = 0; seq < seqLength; seq++) {
+         for (size_t batch = 0; batch < batchSize; batch++) {
             if (seq >= sequence_lens.GetData()[batch]) {
-               for (size_t direction = 0; direction < num_directions; direction++) {
+               for (size_t direction = 0; direction < numDirections; direction++) {
                   for (size_t h = 0; h < fHiddenSize; h++) {
-                     size_t idx = seq * num_directions * batch_size * fHiddenSize
-                        + direction * batch_size * fHiddenSize + batch * fHiddenSize + h;
-                     cell_state[idx] = 0.;
-                     hidden_state[idx] = 0.;
+                     size_t idx = seq * numDirections * batchSize * fHiddenSize
+                        + direction * batchSize * fHiddenSize + batch * fHiddenSize + h;
+                     CellState[idx] = 0.;
+                     HiddenState[idx] = 0.;
                   }
                }
             }
@@ -770,128 +776,128 @@ void ROperatorLSTM<T>::Forward_blas(RTensor<T> &X,
       }
    }
 
-   // copy hidden_state into Y and Y_h, and copy cell_state into Y_c
+   // copy HiddenState into Y and Y_h, and copy cell_state into Y_c
    if (fLayout == 0) {
       if (Y_h.GetShape().size() > 0) {
          if (sequence_lens.GetShape().size() > 0) {
-            for (size_t direction = 0; direction < num_directions; direction++) {
+            for (size_t direction = 0; direction < numDirections; direction++) {
                bool backward = (fDirection == "backward") || (direction == 1);
-               for (size_t batch = 0; batch < batch_size; batch++) {
+               for (size_t batch = 0; batch < batchSize; batch++) {
                   size_t seq = backward ? 0 : (sequence_lens.GetShape().size() > 0 ?
-                     sequence_lens.GetData()[batch] - 1 : seq_length - 1);
-                  size_t offset = seq * num_directions * batch_size * fHiddenSize
-                     + direction * batch_size * fHiddenSize + batch * fHiddenSize;
-                  size_t y_h_offset = direction * batch_size * fHiddenSize
+                     sequence_lens.GetData()[batch] - 1 : seqLength - 1);
+                  size_t offset = seq * numDirections * batchSize * fHiddenSize
+                     + direction * batchSize * fHiddenSize + batch * fHiddenSize;
+                  size_t yhOffset = direction * batchSize * fHiddenSize
                      + batch * fHiddenSize;
-                  std::copy(hidden_state + offset, hidden_state + offset + fHiddenSize,
-                     Y_h.GetData() + y_h_offset);
+                  std::copy(HiddenState + offset, HiddenState + offset + fHiddenSize,
+                     Y_h.GetData() + yhOffset);
                }
             }
          } else {
-            for (size_t direction = 0; direction < num_directions; direction++) {
+            for (size_t direction = 0; direction < numDirections; direction++) {
                bool backward = (fDirection == "backward") || (direction == 1);
-               size_t seq = backward ? 0 : seq_length - 1;
-               size_t offset = seq * num_directions * batch_size * fHiddenSize +
-                  direction * batch_size * fHiddenSize;
-               size_t size = batch_size * fHiddenSize;
-               size_t y_h_offset = direction * batch_size * fHiddenSize;
-               std::copy(hidden_state + offset, hidden_state + offset + size,
-                  Y_h.GetData() + y_h_offset);
+               size_t seq = backward ? 0 : seqLength - 1;
+               size_t offset = seq * numDirections * batchSize * fHiddenSize +
+                  direction * batchSize * fHiddenSize;
+               size_t size = batchSize * fHiddenSize;
+               size_t yhOffset = direction * batchSize * fHiddenSize;
+               std::copy(HiddenState + offset, HiddenState + offset + size,
+                  Y_h.GetData() + yhOffset);
             }
          }
       }
       if (Y_c.GetShape().size() > 0) {
          if (sequence_lens.GetShape().size() > 0) {
-            for (size_t direction = 0; direction < num_directions; direction++) {
+            for (size_t direction = 0; direction < numDirections; direction++) {
                bool backward = (fDirection == "backward") || (direction == 1);
-               for (size_t batch = 0; batch < batch_size; batch++) {
+               for (size_t batch = 0; batch < batchSize; batch++) {
                   size_t seq = backward ? 0 : (sequence_lens.GetShape().size() > 0 ?
-                     sequence_lens.GetData()[batch] - 1 : seq_length - 1);
-                  size_t offset = seq * num_directions * batch_size * fHiddenSize
-                     + direction * batch_size * fHiddenSize + batch * fHiddenSize;
-                  size_t y_c_offset = direction * batch_size * fHiddenSize
+                     sequence_lens.GetData()[batch] - 1 : seqLength - 1);
+                  size_t offset = seq * numDirections * batchSize * fHiddenSize
+                     + direction * batchSize * fHiddenSize + batch * fHiddenSize;
+                  size_t ycOffset = direction * batchSize * fHiddenSize
                      + batch * fHiddenSize;
-                  std::copy(cell_state + offset, hidden_state + offset + fHiddenSize,
-                     Y_c.GetData() + y_c_offset);
+                  std::copy(CellState + offset, HiddenState + offset + fHiddenSize,
+                     Y_c.GetData() + ycOffset);
                }
             }
          } else {
-            for (size_t direction = 0; direction < num_directions; direction++) {
+            for (size_t direction = 0; direction < numDirections; direction++) {
                bool backward = (fDirection == "backward") || (direction == 1);
-               size_t seq = backward ? 0 : seq_length - 1;
-               size_t offset = seq * num_directions * batch_size * fHiddenSize +
-                  direction * batch_size * fHiddenSize;
-               size_t size = batch_size * fHiddenSize;
-               size_t y_c_offset = direction * batch_size * fHiddenSize;
-               std::copy(cell_state + offset, cell_state + offset + size,
-                  Y_c.GetData() + y_c_offset);
+               size_t seq = backward ? 0 : seqLength - 1;
+               size_t offset = seq * numDirections * batchSize * fHiddenSize +
+                  direction * batchSize * fHiddenSize;
+               size_t size = batchSize * fHiddenSize;
+               size_t ycOffset = direction * batchSize * fHiddenSize;
+               std::copy(CellState + offset, CellState + offset + size,
+                  Y_c.GetData() + ycOffset);
             }
          }
       }
    } else { // fLayout=1
       if (Y.GetShape().size() > 0) {
-         for (size_t seq = 0; seq < seq_length; seq++) {
-            for (size_t direction = 0; direction < num_directions; direction++) {
-               for (size_t batch = 0; batch < batch_size; batch++) {
-                  size_t offset = seq * num_directions * batch_size * fHiddenSize +
-                     direction * batch_size * fHiddenSize + batch * fHiddenSize;
-                  size_t y_offset = batch * seq_length * num_directions * fHiddenSize +
-                     seq * num_directions * fHiddenSize + direction * fHiddenSize;
-                  std::copy(hidden_state + offset, hidden_state + offset + fHiddenSize,
-                            Y.GetData() + y_offset);
+         for (size_t seq = 0; seq < seqLength; seq++) {
+            for (size_t direction = 0; direction < numDirections; direction++) {
+               for (size_t batch = 0; batch < batchSize; batch++) {
+                  size_t offset = seq * numDirections * batchSize * fHiddenSize +
+                     direction * batchSize * fHiddenSize + batch * fHiddenSize;
+                  size_t yOffset = batch * seqLength * numDirections * fHiddenSize +
+                     seq * numDirections * fHiddenSize + direction * fHiddenSize;
+                  std::copy(HiddenState + offset, HiddenState + offset + fHiddenSize,
+                            Y.GetData() + yOffset);
                }
             }
          }
       }
       if (Y_h.GetShape().size() > 0) {
-         for (size_t direction = 0; direction < num_directions; direction++) {
+         for (size_t direction = 0; direction < numDirections; direction++) {
             bool backward = (fDirection == "backward") || (direction == 1);
-            for (size_t batch = 0; batch < batch_size; batch++) {
+            for (size_t batch = 0; batch < batchSize; batch++) {
                size_t seq = backward ? 0 : (sequence_lens.GetShape().size() > 0 ?
-                  sequence_lens.GetData()[batch] - 1 : seq_length - 1);
-               size_t offset = seq * num_directions * batch_size * fHiddenSize +
-                  direction * batch_size * fHiddenSize + batch * fHiddenSize;
-               size_t y_h_offset = batch * num_directions * fHiddenSize +
+                  sequence_lens.GetData()[batch] - 1 : seqLength - 1);
+               size_t offset = seq * numDirections * batchSize * fHiddenSize +
+                  direction * batchSize * fHiddenSize + batch * fHiddenSize;
+               size_t yhOffset = batch * numDirections * fHiddenSize +
                   direction * fHiddenSize;
-               std::copy(hidden_state + offset, hidden_state + offset + fHiddenSize,
-                  Y_h.GetData() + y_h_offset);
+               std::copy(HiddenState + offset, HiddenState + offset + fHiddenSize,
+                  Y_h.GetData() + yhOffset);
             }
          }
       }
       if (Y_c.GetShape().size() > 0) {
-         for (size_t direction = 0; direction < num_directions; direction++) {
+         for (size_t direction = 0; direction < numDirections; direction++) {
             bool backward = (fDirection == "backward") || (direction == 1);
-            for (size_t batch = 0; batch < batch_size; batch++) {
+            for (size_t batch = 0; batch < batchSize; batch++) {
                size_t seq = backward ? 0 : (sequence_lens.GetShape().size() > 0 ?
-                  sequence_lens.GetData()[batch] - 1 : seq_length - 1);
-               size_t offset = seq * num_directions * batch_size * fHiddenSize +
-                  direction * batch_size * fHiddenSize + batch * fHiddenSize;
-               size_t y_c_offset = batch * num_directions * fHiddenSize +
+                  sequence_lens.GetData()[batch] - 1 : seqLength - 1);
+               size_t offset = seq * numDirections * batchSize * fHiddenSize +
+                  direction * batchSize * fHiddenSize + batch * fHiddenSize;
+               size_t ycOffset = batch * numDirections * fHiddenSize +
                   direction * fHiddenSize;
-               std::copy(cell_state + offset, cell_state + offset + fHiddenSize,
-                  Y_c.GetData() + y_c_offset);
+               std::copy(CellState + offset, CellState + offset + fHiddenSize,
+                  Y_c.GetData() + ycOffset);
             }
          }
       }
    }
 
-   if (bias)
-      delete[] bias;
+   if (Bias)
+      delete[] Bias;
 
    if (fInputForget == 0) {
-      delete[] ff_forget_gate;
-      delete[] forget_gate;
+      delete[] FForgetGate;
+      delete[] ForgetGate;
    }
 
    if (fLayout == 1) {
-      delete[] input;
-      delete[] initial_hidden_state;
-      delete[] initial_cell_state;
+      delete[] Input;
+      delete[] InitialHiddenState;
+      delete[] InitialCellState;
       if (Y.GetShape().size() == 0)
-         delete[] hidden_state;
+         delete[] HiddenState;
    }
-   if (peephole && batch_size > 1)
-      delete[] peephole;
+   if (Peephole && batchSize > 1)
+      delete[] Peephole;
 }
 
 
