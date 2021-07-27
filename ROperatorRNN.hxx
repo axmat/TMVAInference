@@ -155,7 +155,7 @@ void ROperatorRNN<T>::Forward_blas(RTensor<T> &X,
       }
    }
 
-   T FeedForward[seqLength * batchSize * fHiddenSize];
+   T Feedforward[seqLength * batchSize * fHiddenSize];
    // set the hidden state
    T *HiddenState = nullptr;
    if (fLayout == 0 && Y.GetShape().size() > 0) {
@@ -176,55 +176,54 @@ void ROperatorRNN<T>::Forward_blas(RTensor<T> &X,
       float beta = 0.;
       size_t wOffset = direction * fHiddenSize * inputSize;
       BLAS::sgemm_(&transB, &transA, &n, &m1, &k, &alpha, W.GetData() + wOffset, &k,
-                   Input, &k, &beta, FeedForward, &n);
-      // Feedforward += Bias
+                   Input, &k, &beta, Feedforward, &n);
       if (Bias) {
+         // Feedforward += Bias
          int biasSize = seqLength * batchSize * fHiddenSize;
          int incx = 1;
          int incy = 1;
          size_t biasOffset = direction * seqLength * batchSize * fHiddenSize;
-         BLAS::saxpy_(&biasSize, &alpha, Bias + biasOffset, &incx, FeedForward, &incy);
+         BLAS::saxpy_(&biasSize, &alpha, Bias + biasOffset, &incx, Feedforward, &incy);
       }
       // Copy Feedforward into HiddenState
       for (size_t seq = 0; seq < seqLength; seq++) {
-         size_t feedForwardOffset = seq * batchSize * fHiddenSize;
-         size_t feedForwardSize = batchSize * fHiddenSize;
+         size_t offset = seq * batchSize * fHiddenSize;
+         size_t size = batchSize * fHiddenSize;
          size_t hOffset = seq * numDirections * batchSize * fHiddenSize +
                          direction * batchSize * fHiddenSize;
-         std::copy(FeedForward + feedForwardOffset, FeedForward + feedForwardOffset + feedForwardSize,
-                   HiddenState + hOffset);
+         std::copy(Feedforward + offset, Feedforward + offset + size, HiddenState + hOffset);
       }
 
       for (size_t seq = 0; seq < seqLength; seq++) {
          size_t index = backward ? seqLength - 1 - seq : seq;
-         // Compute HiddenState_{seq} = 1.0 * HiddenState_{seq} + HiddenState_{seq-1} * R^T
-         // HiddenState_{seq} is the slice HiddenState[offset...offset + size]
          int m = batchSize;
          size_t offset = index * numDirections * batchSize * fHiddenSize +
                          direction * batchSize * fHiddenSize;
          size_t size = batchSize * fHiddenSize;
          if (seq == 0) {
             if (InitialHiddenState) {
+               // HiddenState += InitialHiddenState * R^T
                size_t rOffset = direction * fHiddenSize * fHiddenSize;
                size_t initialhOffset = direction * batchSize * fHiddenSize;
                BLAS::sgemm_(&transB, &transA, &n, &m, &n, &alpha, R.GetData() + rOffset, &n,
                   InitialHiddenState + initialhOffset, &n, &alpha, HiddenState + offset, &n);
             }
          } else {
+            // HiddenState += PreviousHiddenState * R^T
             size_t rOffset = direction * fHiddenSize * fHiddenSize;
             size_t previousOffset = (backward ? (index + 1) : (seq - 1)) * numDirections * batchSize *
                                          fHiddenSize + direction * batchSize * fHiddenSize;
             BLAS::sgemm_(&transB, &transA, &n, &m, &n, &alpha, R.GetData() + rOffset, &n,
                          HiddenState + previousOffset, &n, &alpha, HiddenState + offset, &n);
          }
-         // Clip the elements of HiddenState_{seq} into the range [-fClip, fClip]
+         // Clip the elements of HiddenState into the range [-fClip, fClip]
          if (fClip > 0.) {
             for (size_t i = offset; i < offset + size; i++) {
                T x = (HiddenState[i] > -fClip) ? HiddenState[i] : -fClip;
                HiddenState[i] = (x < fClip) ? x : fClip;
             }
          }
-         // Apply the activation function
+         // Apply the activation function to HiddenState
          if (fActivations[direction] == "Relu") {
             for (size_t i = offset; i < offset + size; i++) {
                if (HiddenState[i] < 0.)
@@ -285,7 +284,7 @@ void ROperatorRNN<T>::Forward_blas(RTensor<T> &X,
       }
    }
 
-   // padding the hidden state of RNN with different sequence lengths
+   // Padding the hidden state of RNN with different sequence lengths
    if (sequence_lens.GetShape().size() > 0) {
       for (size_t seq = 0; seq < seqLength; seq++) {
          for (size_t batch = 0; batch < batchSize; batch++) {

@@ -204,13 +204,14 @@ void ROperatorLSTM<T>::Forward_blas(RTensor<T> &X,
    }
 
    // Set the feedforward
-   T FInputGate[seqLength * batchSize * fHiddenSize];
+   size_t feedforwardSize = seqLength * batchSize * fHiddenSize;
+   T FInputGate[feedforwardSize];
    T* FForgetGate = nullptr;
    if (fInputForget == 0) {
-      FForgetGate = new T[seqLength * batchSize * fHiddenSize];
+      FForgetGate = new T[feedforwardSize];
    }
-   T FOutputGate[seqLength * batchSize * fHiddenSize];
-   T FCellGate[seqLength * batchSize * fHiddenSize];
+   T FOutputGate[feedforwardSize];
+   T FCellGate[feedforwardSize];
    // Set the gates
    size_t hiddenStateSize = seqLength * numDirections * batchSize * fHiddenSize;
    T InputGate[hiddenStateSize];
@@ -222,7 +223,6 @@ void ROperatorLSTM<T>::Forward_blas(RTensor<T> &X,
    T CellGate[hiddenStateSize];
    // Set the cell state
    T CellState[hiddenStateSize];
-   // new cell state = h(cell_state)
    T NewCellState[hiddenStateSize];
    // Set the hidden state
    T * HiddenState = nullptr;
@@ -286,15 +286,15 @@ void ROperatorLSTM<T>::Forward_blas(RTensor<T> &X,
       // Copy FInputGate, FOutputGate and FCellGate and FForgetGate into InputGate, OutputGate,
       //    CellGate and ForgetGate
       for (size_t seq = 0; seq < seqLength; seq++) {
-         size_t ffOffset = seq * batchSize * fHiddenSize;
-         size_t ffSize = batchSize * fHiddenSize;
+         size_t offset = seq * batchSize * fHiddenSize;
+         size_t size = batchSize * fHiddenSize;
          size_t gateOffset = seq * numDirections * batchSize * fHiddenSize +
             direction * batchSize * fHiddenSize;
-         std::copy(FInputGate + ffOffset, FInputGate + ffOffset + ffSize, InputGate + gateOffset);
-         std::copy(FOutputGate + ffOffset, FOutputGate + ffOffset + ffSize, OutputGate + gateOffset);
-         std::copy(FCellGate + ffOffset, FCellGate + ffOffset + ffSize, CellGate + gateOffset);
+         std::copy(FInputGate + offset, FInputGate + offset + size, InputGate + gateOffset);
+         std::copy(FOutputGate + offset, FOutputGate + offset + size, OutputGate + gateOffset);
+         std::copy(FCellGate + offset, FCellGate + offset + size, CellGate + gateOffset);
          if (fInputForget == 0) {
-            std::copy(FForgetGate + ffOffset, FForgetGate + ffOffset + ffSize, ForgetGate + gateOffset);
+            std::copy(FForgetGate + offset, FForgetGate + offset + size, ForgetGate + gateOffset);
          }
       }
 
