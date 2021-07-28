@@ -64,13 +64,14 @@ void ROperatorConv<T>::Im2Col(const RTensor<T> &X,
                               std::size_t stridesHeight,
                               std::size_t stridesWidth) {
    std::size_t batchSize = X.GetShape()[0];
+   std::size_t channels  = X.GetShape()[1];
    std::size_t height    = X.GetShape()[2];
    std::size_t width     = X.GetShape()[3];
 
-   for (std::size_t g = 0; g < group; g++) {
-      std::size_t idx = g * depth * kernelHeight * kernelWidth;
+   if (group == 1) {
+      std::size_t index = 0;
       for (std::size_t n = 0; n < batchSize; n++) {
-         for (std::size_t c = g * depth; c < (g + 1) * depth; c++) {
+         for (std::size_t c = 0; c < depth; c++) {
             for (std::size_t h = 0; h < height - kernelHeight + 1;
                  h += stridesHeight) {
                for (std::size_t w = 0; w < width - kernelWidth + 1;
@@ -78,9 +79,33 @@ void ROperatorConv<T>::Im2Col(const RTensor<T> &X,
                   // Matrix of size kernelHeight x kernelWidth concatenated into
                   // one long column
                   for (std::size_t x = 0; x < kernelHeight; x++) {
-                     for (std::size_t y = 0; y < kernelWidth; y++) {
-                        XCol(idx) = X(n, c, h + x, w + y);
-                        idx++;
+                     size_t offset = n * channels * height * width
+                        + c * height * width + (h + x) * width + w;
+                     std::copy(X.GetData() + offset, X.GetData() + offset + kernelWidth,
+                        XCol.GetData() + index);
+                     index += kernelWidth;
+                  }
+               }
+            }
+         }
+      }
+   } else {
+      for (std::size_t g = 0; g < group; g++) {
+         std::size_t index = g * depth * kernelHeight * kernelWidth;
+         for (std::size_t n = 0; n < batchSize; n++) {
+            for (std::size_t c = g * depth; c < (g + 1) * depth; c++) {
+               for (std::size_t h = 0; h < height - kernelHeight + 1;
+                  h += stridesHeight) {
+                  for (std::size_t w = 0; w < width - kernelWidth + 1;
+                     w += stridesWidth) {
+                     // Matrix of size kernelHeight x kernelWidth concatenated into
+                     // one long column
+                     for (std::size_t x = 0; x < kernelHeight; x++) {
+                        size_t offset = n * channels * height * width
+                           + c * height * width + (h + x) * width + w;
+                        std::copy(X.GetData() + offset, X.GetData() + offset + kernelWidth,
+                           XCol.GetData() + index);
+                        index += kernelWidth;
                      }
                   }
                }
@@ -166,11 +191,29 @@ void ROperatorConv<T>::Forward_blas(RTensor<T> &X,
    RTensor<T> XPad({batchSize, channels, height + padsTop + padsBottom,
       width + padsLeft + padsRight});
    // Padding the input with zeros
-   for (std::size_t n = 0; n < batchSize; n++) {
+   if (batchSize == 1) {
       for (std::size_t c = 0; c < channels; c++) {
          for (std::size_t h = 0; h < height; h++) {
-            for (std::size_t w = 0; w < width; w++) {
-               XPad(n, c, h + padsTop, w + padsLeft) = X(n, c, h, w);
+            size_t xPadOffset = c * (height + padsTop + padsBottom)
+               * (width + padsLeft + padsRight) + (h + padsTop) * (width + padsLeft
+               + padsRight) + padsLeft;
+            size_t xOffset = c * height * width + h * width;
+            std::copy(X.GetData() + xOffset, X.GetData() + xOffset + width,
+               XPad.GetData() + xPadOffset);
+         }
+      }
+   } else {
+      for (std::size_t n = 0; n < batchSize; n++) {
+         for (std::size_t c = 0; c < channels; c++) {
+            for (std::size_t h = 0; h < height; h++) {
+               size_t xPadOffset = n * channels * (height + padsTop + padsBottom)
+                  * (width + padsLeft + padsRight) + c * (height + padsTop + padsBottom)
+                  * (width + padsLeft + padsRight) + (h + padsTop) * (width + padsLeft
+                  + padsRight) + padsLeft;
+               size_t xOffset = n * channels * height * width + c * height * width
+                  + h * width;
+               std::copy(X.GetData() + xOffset, X.GetData() + xOffset + width,
+                  XPad.GetData() + xPadOffset);
             }
          }
       }
