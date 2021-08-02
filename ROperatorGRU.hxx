@@ -151,10 +151,10 @@ void ROperatorGRU<T>::Forward_blas(RTensor<T> &X,
    }
 
    // Set the feedforward
-   size_t feedForwardSize = seqLength * batchSize * fHiddenSize;
-   T FUpdateGate[feedForwardSize];
-   T FResetGate[feedForwardSize];
-   T FHiddenGate[feedForwardSize];
+   size_t feedforwardSize = seqLength * batchSize * fHiddenSize;
+   T FUpdateGate[feedforwardSize];
+   T FResetGate[feedforwardSize];
+   T FHiddenGate[feedforwardSize];
    // Set the gates
    size_t hiddenStateSize = seqLength * numDirections * batchSize * fHiddenSize;
    T UpdateGate[hiddenStateSize];
@@ -243,26 +243,26 @@ void ROperatorGRU<T>::Forward_blas(RTensor<T> &X,
             if (InitialHiddenState) {
                size_t initialHOffset = direction * batchSize * fHiddenSize;
                // UpdateGate += InitialHiddenState * R_z^T
-               size_t rUOffset = direction * 3 * fHiddenSize * fHiddenSize;
-               BLAS::sgemm_(&transB, &transA, &n, &m2, &n, &alpha, R.GetData() + rUOffset, &n,
+               size_t rzOffset = direction * 3 * fHiddenSize * fHiddenSize;
+               BLAS::sgemm_(&transB, &transA, &n, &m2, &n, &alpha, R.GetData() + rzOffset, &n,
                   InitialHiddenState + initialHOffset, &n, &alpha, UpdateGate + offset, &n);
                // ResetGate += InitialHiddenState * R_r^T
-               size_t rROffset = direction * 3 * fHiddenSize * fHiddenSize
+               size_t rrOffset = direction * 3 * fHiddenSize * fHiddenSize
                   + fHiddenSize * fHiddenSize;
-               BLAS::sgemm_(&transB, &transA, &n, &m2, &n, &alpha, R.GetData() + rROffset, &n,
+               BLAS::sgemm_(&transB, &transA, &n, &m2, &n, &alpha, R.GetData() + rrOffset, &n,
                   InitialHiddenState + initialHOffset, &n, &alpha, ResetGate + offset, &n);
             }
          } else {
             size_t previousOffset = (backward ? (index + 1) : (seq - 1)) * numDirections * 
                batchSize * fHiddenSize + direction * batchSize * fHiddenSize;
             // UpdateGate += PreviousHiddenState * R_z^T
-            size_t rUOffset = direction * 3 * fHiddenSize * fHiddenSize;
-            BLAS::sgemm_(&transB, &transA, &n, &m2, &n, &alpha, R.GetData() + rUOffset, &n,
+            size_t rzOffset = direction * 3 * fHiddenSize * fHiddenSize;
+            BLAS::sgemm_(&transB, &transA, &n, &m2, &n, &alpha, R.GetData() + rzOffset, &n,
                HiddenState + previousOffset, &n, &alpha, UpdateGate + offset, &n);
             // ResetGate += PreviousHiddenState * R_r^T
-            size_t rROffset = direction * 3 * fHiddenSize * fHiddenSize
+            size_t rrOffset = direction * 3 * fHiddenSize * fHiddenSize
                + fHiddenSize * fHiddenSize;
-            BLAS::sgemm_(&transB, &transA, &n, &m2, &n, &alpha, R.GetData() + rROffset, &n,
+            BLAS::sgemm_(&transB, &transA, &n, &m2, &n, &alpha, R.GetData() + rrOffset, &n,
                HiddenState + previousOffset, &n, &alpha, ResetGate + offset, &n);
          }
          // Clip the elements of the update gate and the reset gate into the range [-fClip, fClip]
@@ -319,17 +319,17 @@ void ROperatorGRU<T>::Forward_blas(RTensor<T> &X,
                }
             }
             // Feedback = Feedback * R_h^T
-            size_t rh_offset = direction * 3 * fHiddenSize * fHiddenSize
+            size_t rhOffset = direction * 3 * fHiddenSize * fHiddenSize
                + 2 * fHiddenSize * fHiddenSize;
-            BLAS::sgemm_(&transB, &transA, &n, &m2, &n, &alpha, R.GetData() + rh_offset, &n,
+            BLAS::sgemm_(&transB, &transA, &n, &m2, &n, &alpha, R.GetData() + rhOffset, &n,
                Feedback, &n, &beta, Feedback, &n);
          } else { // fLinearBeforReset=1
             // Feedback = PreviousHiddenState * R_h^T
             size_t previousOffset = (backward ? (index + 1) : (seq - 1)) * numDirections *
                batchSize * fHiddenSize + direction * batchSize * fHiddenSize;
-            size_t rh_offset = direction * 3 * fHiddenSize * fHiddenSize
+            size_t rhOffset = direction * 3 * fHiddenSize * fHiddenSize
                + 2 * fHiddenSize * fHiddenSize;
-            BLAS::sgemm_(&transB, &transA, &n, &m2, &n, &alpha, R.GetData() + rh_offset, &n,
+            BLAS::sgemm_(&transB, &transA, &n, &m2, &n, &alpha, R.GetData() + rhOffset, &n,
                HiddenState + previousOffset, &n, &beta, Feedback, &n);
             // Add the bias of te recurrence to Feedback
             size_t rbhOffset = direction * 6 * batchSize * fHiddenSize
