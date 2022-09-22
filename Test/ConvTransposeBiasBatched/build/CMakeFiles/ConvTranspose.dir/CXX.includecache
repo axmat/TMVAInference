@@ -1,0 +1,38 @@
+#IncludeRegexLine: ^[ 	]*[#%][ 	]*(include|import)[ 	]*[<"]([^">]+)([">])
+
+#IncludeRegexScan: ^.*$
+
+#IncludeRegexComplain: ^$
+
+#IncludeRegexTransform: 
+
+/home/ahmat/TMVAInference/Test/ConvTransposeBiasBatched/ConvTranspose.cxx
+./ConvTransposeBias2d.hxx
+/home/ahmat/TMVAInference/Test/ConvTransposeBiasBatched/ConvTransposeBias2d.hxx
+iostream
+-
+
+/home/ahmat/TMVAInference/Test/ConvTransposeBiasBatched/ConvTransposeBias2d.hxx
+vector
+-
+TMVA/SOFIE_common.hxx
+/home/ahmat/TMVAInference/Test/ConvTransposeBiasBatched/TMVA/SOFIE_common.hxx
+
+/home/ahmat/root/tmva/sofie/inc/TMVA/SOFIE_common.hxx
+type_traits
+-
+cstdint
+-
+cstring
+-
+string
+-
+vector
+-
+memory
+-
+regex
+-
+iostream
+-
+

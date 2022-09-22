@@ -1,5 +1,0 @@
-/Users/ahmat/cern/tmva_inference/SofieTest/build/CMakeFiles/edit_cache.dir
-/Users/ahmat/cern/tmva_inference/SofieTest/build/CMakeFiles/rebuild_cache.dir
-/Users/ahmat/cern/tmva_inference/SofieTest/build/ConvTranspose/CMakeFiles/ConvTranspose.dir
-/Users/ahmat/cern/tmva_inference/SofieTest/build/ConvTranspose/CMakeFiles/edit_cache.dir
-/Users/ahmat/cern/tmva_inference/SofieTest/build/ConvTranspose/CMakeFiles/rebuild_cache.dir

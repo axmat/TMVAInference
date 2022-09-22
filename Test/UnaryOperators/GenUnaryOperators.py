@@ -44,3 +44,25 @@ model = onnx.helper.make_model(graph)
 checker.check_model(model)
 onnx.save(model, 'Reciprocal.onnx')
 
+# Exp
+X = helper.make_tensor_value_info('X', TensorProto.FLOAT, [10])
+Y = helper.make_tensor_value_info('Y', TensorProto.FLOAT, [10])
+
+node = helper.make_node(
+    'Exp',
+    ['X'],
+    ['Y'],
+)
+
+graph = onnx.helper.make_graph(
+    [node],
+    'Exp',
+    [X],
+    [Y],
+)
+
+model = onnx.helper.make_model(graph)
+checker.check_model(model)
+onnx.save(model, 'Exp.onnx')
+
+
