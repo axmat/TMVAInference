@@ -11,11 +11,10 @@ std::vector<T> Broadcast(const T* data, const std::vector<size_t>& shape, const 
    for (size_t i = 0; i < size; i++) {
       curLength *= shape[i];
    }
-   // newShape is a vector of vectors of size equal to the number of the current dimension
-   // along which we are broadcasting the tensor
+   // newShape is an aray of size equal to dimension along which we are broadcasting the tensor
    std::vector<T> broadcastedData(data, data + curLength);
-   // Size of the previous dimension
-   size_t prevDim = 1;
+   // Product of the previous dimensions of targetShape
+   size_t arrayNum = 1;
 
    for (size_t idx = 0; idx < size; idx++) {
       size_t dim = shape[idx];
@@ -23,46 +22,44 @@ std::vector<T> Broadcast(const T* data, const std::vector<size_t>& shape, const 
       if (dim == 1 && targetDim > 1) {
          // Set the new length of the data
          size_t newLength = curLength * targetDim;
-         // New
+         // New broadcasted data
          std::vector<T> newData(newLength);
-         // View the data as a list of prevDim arrays of size arrayLength
-         size_t arrayLength = curLength / prevDim;
-         // New array length
-         //size_t newArrayLength = arrayLength * targetDim;
-         std::cout << "previous dim = " << prevDim << std::endl;
-         std::cout << "array length = " << arrayLength << std::endl;
+         // View the data as a list of arrayNum arrays of size arrayLength
+         size_t arrayLength = curLength / arrayNum;
          // Broadcast each array dim times
          if (arrayLength > 1) {
             // If each array has at least two elements
-            for (size_t prevIdx = 0; prevIdx < prevDim; prevIdx++) {
+            for (size_t arrayIdx = 0; arrayIdx < arrayNum; arrayIdx++) {
                for (size_t targetIdx = 0; targetIdx < targetDim; targetIdx++) {
-                  size_t offset = prevIdx * arrayLength * targetDim + targetIdx * arrayLength;
-                  std::copy(broadcastedData.begin() + prevIdx * arrayLength,
-                     broadcastedData.begin() + (prevIdx + 1) * arrayLength,
+                  size_t offset = arrayIdx * arrayLength * targetDim + targetIdx * arrayLength;
+                  std::copy(broadcastedData.begin() + arrayIdx * arrayLength,
+                     broadcastedData.begin() + (arrayIdx + 1) * arrayLength,
                      newData.begin() + offset);
                }
             }
          } else {
-            for (size_t prevIdx = 0; prevIdx < prevDim; prevIdx++) {
-               std::fill(newData.begin() + prevIdx * targetDim,
-                  newData.begin() + (prevIdx + 1) * targetDim, broadcastedData[prevIdx]);
+            for (size_t arrayIdx = 0; arrayIdx < arrayNum; arrayIdx++) {
+               std::fill(newData.begin() + arrayIdx * targetDim,
+                  newData.begin() + (arrayIdx + 1) * targetDim, broadcastedData[arrayIdx]);
             }
          }
          // Update current length
          curLength = newLength;
          // Update broadcasted data
-         for (size_t i = 0; i < newData.size(); i++) std::cout << newData[i] << " ";
-         std::cout << std::endl;
+         //for (size_t i = 0; i < newData.size(); i++) std::cout << newData[i] << " ";
          broadcastedData = std::vector<T>(newData);
       }
       // Update previous dim
-      prevDim = dim;
+      //prevDim = dim;
+      // Update k
+      arrayNum *= targetDim;
    }
    return broadcastedData;
 }
 
 int main() {
    {
+      std::cout << "\n{3, 1} to {3, 2}\n";
       size_t length = 3 * 2;
       std::vector<float> x(3);
       std::iota(x.begin(), x.end(), 0.);
@@ -72,7 +69,9 @@ int main() {
       }
       std::cout << "\n";
    }
+
    {
+      std::cout << "\n{2, 1} to {2, 4}\n";
       size_t length = 2 * 4;
       std::vector<float> x(2);
       std::iota(x.begin(), x.end(), 0.);
@@ -84,6 +83,7 @@ int main() {
    }
 
    {
+      std::cout << "\n{2, 1, 4} to {2, 3, 4}\n";
       size_t length = 2 * 3 * 4;
       std::vector<float> x(2 * 4);
       std::iota(x.begin(), x.end(), 0.);
@@ -95,8 +95,8 @@ int main() {
    }
 
    {
-      std::cout << "{2, 1, 3, 1, 2} to {2, 2, 3, 2, 2}\n";
-      size_t length = 2 * 3 * 2;
+      std::cout << "\n{2, 1, 3, 1, 2} to {2, 2, 3, 2, 2}\n";
+      size_t length = 2 * 2 * 3 * 2 * 2;
       std::vector<float> x(2 * 3 * 2);
       std::iota(x.begin(), x.end(), 0.);
       auto z = Broadcast(x.data(), {2, 1, 3, 1, 2}, {2, 2, 3, 2, 2});
@@ -108,6 +108,7 @@ int main() {
 
 
    {
+      std::cout << "{2, 1, 4, 1, 3} to {2, 3, 4, 2, 3}\n";
       std::cout << std::endl;
       size_t length = 2 * 3 * 4 * 2 * 3;
       std::vector<float> x(2 * 4 * 3);
@@ -117,6 +118,26 @@ int main() {
          std::cout << z[i] << " ";
       }
       std::cout << "\n";
+
+      float out[] = {
+         0.,  1.,  2.,  0.,  1.,  2.,  3.,  4.,  5.,  3.,  4.,  5.,  6.,
+        7.,  8.,  6.,  7.,  8.,  9., 10., 11.,  9., 10., 11.,  0.,  1.,
+        2.,  0.,  1.,  2.,  3.,  4.,  5.,  3.,  4.,  5.,  6.,  7.,  8.,
+        6.,  7.,  8.,  9., 10., 11.,  9., 10., 11.,  0.,  1.,  2.,  0.,
+        1.,  2.,  3.,  4.,  5.,  3.,  4.,  5.,  6.,  7.,  8.,  6.,  7.,
+        8.,  9., 10., 11.,  9., 10., 11., 12., 13., 14., 12., 13., 14.,
+       15., 16., 17., 15., 16., 17., 18., 19., 20., 18., 19., 20., 21.,
+       22., 23., 21., 22., 23., 12., 13., 14., 12., 13., 14., 15., 16.,
+       17., 15., 16., 17., 18., 19., 20., 18., 19., 20., 21., 22., 23.,
+       21., 22., 23., 12., 13., 14., 12., 13., 14., 15., 16., 17., 15.,
+       16., 17., 18., 19., 20., 18., 19., 20., 21., 22., 23., 21., 22.,
+       23.};
+      for (size_t i = 0; i < length; i++) {
+         if (z[i] != out[i]) {
+            std::cout << "\nz != out\n";
+            break;
+         }
+      }
    }
 
    return 0;
