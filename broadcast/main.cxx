@@ -11,8 +11,15 @@ std::vector<T> Broadcast(const T* data, const std::vector<size_t>& shape, const 
    for (size_t i = 0; i < size; i++) {
       curLength *= shape[i];
    }
+   size_t targetLength = 1;
+   for (size_t i = 0; i < size; i++) {
+      targetLength *= targetShape[i];
+   }
    // newShape is an aray of size equal to dimension along which we are broadcasting the tensor
-   std::vector<T> broadcastedData(data, data + curLength);
+   std::vector<T> broadcastedData(targetLength);
+   std::copy(data, data + curLength, broadcastedData.begin());
+   // New broadcasted data
+   std::vector<T> newData(targetLength);
    // Product of the previous dimensions of targetShape
    size_t arrayNum = 1;
 
@@ -22,8 +29,6 @@ std::vector<T> Broadcast(const T* data, const std::vector<size_t>& shape, const 
       if (dim == 1 && targetDim > 1) {
          // Set the new length of the data
          size_t newLength = curLength * targetDim;
-         // New broadcasted data
-         std::vector<T> newData(newLength);
          // View the data as a list of arrayNum arrays of size arrayLength
          size_t arrayLength = curLength / arrayNum;
          // Broadcast each array dim times
@@ -46,12 +51,9 @@ std::vector<T> Broadcast(const T* data, const std::vector<size_t>& shape, const 
          // Update current length
          curLength = newLength;
          // Update broadcasted data
-         //for (size_t i = 0; i < newData.size(); i++) std::cout << newData[i] << " ";
-         broadcastedData = std::vector<T>(newData);
+         std::copy(newData.begin(), newData.begin() + newLength, broadcastedData.begin());
       }
-      // Update previous dim
-      //prevDim = dim;
-      // Update k
+      // Update number of arrays
       arrayNum *= targetDim;
    }
    return broadcastedData;
