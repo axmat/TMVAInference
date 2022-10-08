@@ -1,6 +1,6 @@
 #include "Sign.hxx"
 
-void Run() {
+void TestSign() {
    std::vector<float> x({0.1, 0., -3, 2.5, 10.9});
    TMVA_SOFIE_Sign::Session s;
    auto y = s.infer(x.data());
