@@ -7,7 +7,7 @@
 #include <iostream>
 
 const std::string path =
-    "/Users/ahmat/cern/tmva_inference/SofieTest/ConvTranspose";
+    "/usr/home/ahmat/TMVAInference/Test/ConvTranspose/";
 
 int main() {
   {
