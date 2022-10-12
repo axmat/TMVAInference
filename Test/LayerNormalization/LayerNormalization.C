@@ -133,14 +133,16 @@ public:
 
       auto axesStrides = UTILITY::ComputeStrideFromShape(fAxesShape);
       std::string axesIndex;
-      for (size_t i = 0; i < fAxis; i++) {
-         axesIndex += "axis_" + std::to_string(i) + " * " + std::to_string(axesStrides[i]);
+      axesIndex += "axis_" + std::to_string(0) + " * " + std::to_string(axesStrides[0]);
+      for (size_t i = 1; i < fAxis; i++) {
+         axesIndex += " + axis_" + std::to_string(i) + " * " + std::to_string(axesStrides[i]);
       }
 
       auto normalizedStrides = UTILITY::ComputeStrideFromShape(fNormalizedShape);
-      std::string normalizedIndex;
-      for (size_t i = fAxis; i < fSize; i++) {
-         normalizedIndex += "axis_" + std::to_string(i) + " * " + std::to_string(normalizedStrides[fAxis - i]);
+      std::string normalizedIndex = "axis_" + std::to_string(fAxis) + " * " + std::to_string(normalizedStrides[0]);
+      for (size_t i = fAxis + 1; i < fSize; i++) {
+         normalizedIndex += " + axis_" + std::to_string(i) + " * "
+            + std::to_string(normalizedStrides[i - fAxis]);
       }
 
       out << SP << "// Compute the mean\n";
@@ -293,7 +295,7 @@ void LayerNormalization() {
    RModelParser_ONNX parser;
    parser.RegisterOperator("LayerNormalization", ParseLayerNormalisation);
 
-   RModel model = parser.Parse("./LayerNormalization.onnx");
+   RModel model = parser.Parse("./LayerNormalization3d.onnx");
    model.Generate();
    model.OutputGenerated();
 }
