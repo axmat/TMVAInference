@@ -135,33 +135,26 @@ public:
     auto strides = UTILITY::ComputeStrideFromShape(fShapeX);
     std::string InputIndex = "axis_0 * " + std::to_string(strides[0]);
     for (size_t i = 1; i < fSize; i++) {
-      InputIndex +=
-          " + axis_" + std::to_string(i) + " * " + std::to_string(strides[i]);
+      InputIndex += " + axis_" + std::to_string(i) + " * " + std::to_string(strides[i]);
     }
 
     auto axesStrides = UTILITY::ComputeStrideFromShape(fAxesShape);
-    std::string axesIndex;
-    axesIndex +=
-        "axis_" + std::to_string(0) + " * " + std::to_string(axesStrides[0]);
+    std::string axesIndex = "axis_" + std::to_string(0) + " * " + std::to_string(axesStrides[0]);
     for (size_t i = 1; i < fAxis; i++) {
-      axesIndex += " + axis_" + std::to_string(i) + " * " +
-                   std::to_string(axesStrides[i]);
+      axesIndex += " + axis_" + std::to_string(i) + " * " + std::to_string(axesStrides[i]);
     }
 
     auto normalizedStrides = UTILITY::ComputeStrideFromShape(fNormalizedShape);
-    std::string normalizedIndex = "axis_" + std::to_string(fAxis) + " * " +
-                                  std::to_string(normalizedStrides[0]);
+    std::string normalizedIndex = "axis_" + std::to_string(fAxis) + " * " + std::to_string(normalizedStrides[0]);
     for (size_t i = fAxis + 1; i < fSize; i++) {
-      normalizedIndex += " + axis_" + std::to_string(i) + " * " +
-                         std::to_string(normalizedStrides[i - fAxis]);
+      normalizedIndex += " + axis_" + std::to_string(i) + " * " + std::to_string(normalizedStrides[i - fAxis]);
     }
 
     out << SP << "// Compute the mean\n";
     // Loop over the normalized dimensions
     for (size_t i = 0; i < fAxis; i++) {
       std::string iIdx = "axis_" + std::to_string(i);
-      out << SP << "for (size_t " << iIdx << " = 0; " << iIdx << " < "
-          << inputShape;
+      out << SP << "for (size_t " << iIdx << " = 0; " << iIdx << " < " << inputShape;
       out << "[" << i << "]; " << iIdx << "++) {\n";
     }
     // Set sum = 0
@@ -169,17 +162,14 @@ public:
     // loop over all the dims in [0, fAxis)
     for (size_t j = fAxis; j < fSize; j++) {
       std::string jIdx = "axis_" + std::to_string(j);
-      out << SP << SP << "for (size_t " << jIdx << " = 0; " << jIdx << " < "
-          << inputShape;
+      out << SP << SP << "for (size_t " << jIdx << " = 0; " << jIdx << " < " << inputShape;
       out << "[" << j << "]; " << jIdx << "++) {\n";
     }
-    out << SP << SP << SP << "sum += tensor_" << fNX << "[" << InputIndex
-        << "];\n";
+    out << SP << SP << SP << "sum += tensor_" << fNX << "[" << InputIndex << "];\n";
     for (size_t j = fAxis; j < fSize; j++) {
       out << SP << SP << "}\n";
     }
-    out << SP << SP << "tensor_" << fNMean << "[" << axesIndex << "] = sum / "
-        << fType << "(";
+    out << SP << SP << "tensor_" << fNMean << "[" << axesIndex << "] = sum / " << fType << "(";
     out << fNormalizedLength << ");\n";
     for (size_t i = fAxis; i < fSize; i++) {
       out << SP << "}\n";
@@ -189,8 +179,7 @@ public:
     // Loop over the normalized dimensions
     for (size_t i = 0; i < fAxis; i++) {
       std::string iIdx = "axis_" + std::to_string(i);
-      out << SP << "for (size_t " << iIdx << " = 0; " << iIdx << " < "
-          << inputShape;
+      out << SP << "for (size_t " << iIdx << " = 0; " << iIdx << " < " << inputShape;
       out << "[" << i << "]; " << iIdx << "++){\n";
     }
     // Set sum = 0
@@ -198,48 +187,36 @@ public:
     // loop over all the dims in [0, fAxis)
     for (size_t j = fAxis; j < fSize; j++) {
       std::string jIdx = "axis_" + std::to_string(j);
-      out << SP << SP << "for (size_t " << jIdx << " = 0; " << jIdx << " < "
-          << inputShape;
+      out << SP << SP << "for (size_t " << jIdx << " = 0; " << jIdx << " < " << inputShape;
       out << "[" << j << "]; " << jIdx << "++){\n";
     }
-    out << SP << SP << SP << "sum += std::pow(tensor_" << fNX << "["
-        << InputIndex << "] - tensor_";
+    out << SP << SP << SP << "sum += std::pow(tensor_" << fNX << "[" << InputIndex << "] - tensor_";
     out << fNMean << "[" << axesIndex << "], 2);\n";
     for (size_t j = fAxis; j < fSize; j++) {
       out << SP << SP << "}\n";
     }
-    out << SP << SP << "tensor_" << fNInvStdDev << "[" << axesIndex
-        << "] = 1 / std::sqrt(";
-    out << "sum / " << fType << "(" << fNormalizedLength << ") + "
-        << fAttrEpsilon << ");\n";
+    out << SP << SP << "tensor_" << fNInvStdDev << "[" << axesIndex << "] = 1 / std::sqrt(";
+    out << "sum / " << fType << "(" << fNormalizedLength << ") + " << fAttrEpsilon << ");\n";
     for (size_t i = 0; i < fAxis; i++) {
       out << SP << "}\n";
     }
 
-    out << SP
-        << "// Y = Scale o NormalizedInput + B = Scale o InvStdDev (X - Mean) "
-           "+ B\n";
+    out << SP << "// Y = Scale o NormalizedInput + B = Scale o InvStdDev (X - Mean) + B\n";
     // loop over all the dims in [0, fAxis)
     for (size_t i = 0; i < fAxis; i++) {
       std::string iIdx = "axis_" + std::to_string(i);
-      out << SP << "for (size_t " << iIdx << " = 0; " << iIdx << " < "
-          << inputShape;
+      out << SP << "for (size_t " << iIdx << " = 0; " << iIdx << " < " << inputShape;
       out << "[" << i << "]; " << iIdx << "++){\n";
     }
     for (size_t j = fAxis; j < fSize; j++) {
       std::string jIdx = "axis_" + std::to_string(j);
-      out << SP << SP << "for (size_t " << jIdx << " = 0; " << jIdx << " < "
-          << inputShape;
+      out << SP << SP << "for (size_t " << jIdx << " = 0; " << jIdx << " < " << inputShape;
       out << "[" << j << "]; " << jIdx << "++){\n";
     }
-    out << SP << SP << SP << "tensor_" << fNY << "[" << InputIndex
-        << "] = tensor_" << fNScale;
-    out << "[" << normalizedIndex << "] * tensor_" << fNInvStdDev << "["
-        << axesIndex;
-    out << "] * (tensor_" << fNX << "[" << InputIndex << "] - tensor_" << fNMean
-        << "[";
-    out << axesIndex << "]) + tensor_" << fNB << "[" << normalizedIndex
-        << "];\n";
+    out << SP << SP << SP << "tensor_" << fNY << "[" << InputIndex << "] = tensor_" << fNScale;
+    out << "[" << normalizedIndex << "] * tensor_" << fNInvStdDev << "[" << axesIndex;
+    out << "] * (tensor_" << fNX << "[" << InputIndex << "] - tensor_" << fNMean << "[";
+    out << axesIndex << "]) + tensor_" << fNB << "[" << normalizedIndex << "];\n";
     for (size_t j = fAxis; j < fSize; j++) {
       out << SP << SP << "}\n";
     }
