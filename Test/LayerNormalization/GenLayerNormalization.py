@@ -39,7 +39,7 @@ model = onnx.helper.make_model(graph)
 checker.check_model(model)
 onnx.save(model, 'LayerNormalization2d.onnx')
 
-# 3d
+# 4d
 X = helper.make_tensor_value_info('X', TensorProto.FLOAT, [2, 3, 4, 5])
 Scale = helper.make_tensor_value_info('Scale', TensorProto.FLOAT, [4, 5])
 B = helper.make_tensor_value_info('B', TensorProto.FLOAT, [4, 5])
@@ -74,5 +74,5 @@ graph = onnx.helper.make_graph(
 
 model = onnx.helper.make_model(graph)
 checker.check_model(model)
-onnx.save(model, 'LayerNormalization3d.onnx')
+onnx.save(model, 'LayerNormalization4d.onnx')
 

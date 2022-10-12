@@ -1,29 +1,38 @@
-#include "LayerNormalization3d.hxx"
+#include "LayerNormalization2d.hxx"
+#include "LayerNormalization4d.hxx"
 
 void TestLayerNormalization() {
-   std::vector<float> x(120);
-   for (size_t i = 0; i < 120; i++)
+
+  {
+    std::vector<float> x(12);
+    for (size_t i = 0; i < 12; i++)
       x[i] = float(i);
-   TMVA_SOFIE_LayerNormalization3d::Session s;
-   auto y = s.infer(x.data());
 
-   auto print = [](const std::vector<float>& v) {
-      for (auto& val : v) {
-         std::cout << val << " ";
+    TMVA_SOFIE_LayerNormalization2d::Session s;
+    auto y = s.infer(x.data());
+
+    float true_y[] = {-0.4708, -0.0106, 0.2342,  1.3416,  -0.4708, -0.0106,
+                      0.2342,  1.3416,  -0.4708, -0.0106, 0.2342,  1.3416};
+
+    for (size_t i = 0; i < 12; i++) {
+      if (std::abs(y[i] - true_y[i]) > 1e-3) {
+        std::cout << "Diff output\n";
+        break;
       }
-      std::cout << std::endl;
-   };
+      if (i == 11)
+        std::cout << "Same output\n";
+    }
+  }
 
-   std::cout << "Input = ";
-   print(x);
-   std::cout << std::endl;
+  {
+    std::vector<float> x(120);
+    for (size_t i = 0; i < 120; i++)
+      x[i] = float(i);
+    TMVA_SOFIE_LayerNormalization4d::Session s;
+    auto y = s.infer(x.data());
 
-   std::cout << "LN(Input) = ";
-   print(y);
-   std::cout << std::endl;
-
-   float true_y[] = {
-0.0352, 0.0526, 0.0699, 0.0873, 0.1046, 0.1220, 0.1393, 0.1566, 0.1740,
+    float true_y[] = {
+        0.0352, 0.0526, 0.0699, 0.0873, 0.1046, 0.1220, 0.1393, 0.1566, 0.1740,
         0.1913, 0.2087, 0.2260, 0.2434, 0.2607, 0.2780, 0.2954, 0.3127, 0.3301,
         0.3474, 0.3648, 0.0352, 0.0526, 0.0699, 0.0873, 0.1046, 0.1220, 0.1393,
         0.1566, 0.1740, 0.1913, 0.2087, 0.2260, 0.2434, 0.2607, 0.2780, 0.2954,
@@ -37,10 +46,13 @@ void TestLayerNormalization() {
         0.3648, 0.0352, 0.0526, 0.0699, 0.0873, 0.1046, 0.1220, 0.1393, 0.1566,
         0.1740, 0.1913, 0.2087, 0.2260, 0.2434, 0.2607, 0.2780, 0.2954, 0.3127,
         0.3301, 0.3474, 0.3648};
-   for (size_t i = 0; i < 120; i++) {
+    for (size_t i = 0; i < 120; i++) {
       if (std::abs(y[i] - true_y[i]) > 1e-3) {
-         std::cout << "Diff output\n";
+        std::cout << "Diff output\n";
+        break;
       }
-      if (i == 119) std::cout << "Same output\n";
-   }
+      if (i == 119)
+        std::cout << "Same output\n";
+    }
+  }
 }
