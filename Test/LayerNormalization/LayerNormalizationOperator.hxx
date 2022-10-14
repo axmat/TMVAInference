@@ -20,6 +20,10 @@ private:
   std::string fNMean;
   std::string fNInvStdDev;
 
+  std::string fNCastedX;
+  std::string fNNormalizedX;
+  std::string fNBroadcastedB;
+
   std::vector<size_t> fShapeX;
   std::vector<size_t> fShapeScale;
   std::vector<size_t> fShapeB;
@@ -30,7 +34,7 @@ private:
   size_t fAxis; // axis in [0, size)
   size_t fSize; // Size of the input
   // size_t fAxisDim;
-  size_t fLength; // Lenght of the input X
+  size_t fLength; // Length of the input X
 
   std::vector<size_t> fNormalizedShape;
   std::vector<size_t> fAxesShape;
@@ -61,10 +65,6 @@ public:
     return input;
   }
 
-  std::string GenerateInitMemberCode(std::string OpName) {
-    std::stringstream out;
-    return out.str();
-  }
 
   void Initialize(RModel &model) override {
     if (!model.CheckIfTensorAlreadyExist(fNX)) {
@@ -90,19 +90,49 @@ public:
     fNormalizedLength = ConvertShapeToLength(fNormalizedShape);
     // length of the input
     fLength = ConvertShapeToLength(fShapeX);
+    // Type of mean and std
+    ETensorType type = (fAttrStashType == 1)? ETensorType::FLOAT : model.GetTensorType(fNX);
     // Mean
-    // fShapeMean.resize();
     if (fNMean.empty()) {
       fNMean = "Mean";
-      model.AddIntermediateTensor(fNMean, model.GetTensorType(fNX),
-                                  {fAxesLength});
+      model.AddIntermediateTensor(fNMean, type, {fAxesLength});
     }
     // Inverse Standard Deviation
     if (fNInvStdDev.empty()) {
       fNInvStdDev = "InvStdDev";
-      model.AddIntermediateTensor(fNInvStdDev, model.GetTensorType(fNX),
-                                  {fAxesLength});
+      model.AddIntermediateTensor(fNInvStdDev, type, {fAxesLength});
     }
+    // Cast X to float
+    if (fAttrStashType == 1 && model.GetTensorType(fNX) != ETensorType::FLOAT) {
+      fNCastedX = "CastedX";
+      model.AddIntermediateTensor(fNCastedX, ETensorType::FLOAT, fShapeX);
+      fNNormalizedX = "NormalizedX";
+      model.AddIntermediateTensor(fNNormalizedX, ETensorType::FLOAT, fShapeX);
+    }
+    // Broadcast the bias
+    if (!fNB.empty()) {
+      fShapeB = model.GetTensorShape(fNB);
+      size_t lengthB = ConvertShapeToLength(fShapeB);
+      if (lengthB < fLength) {
+         fNBroadcastedB = "BroadcastedB";
+         model.AddIntermediateTensor(fNBroadcastedB, ConvertStringToType(fType), fShapeX);
+      }
+    }
+  }
+
+
+  std::string GenerateInitCode() override {
+      std::stringstream out;
+      if (!fNBroadcastedB.empty()) {
+         out << SP << "// Broadcasting the bias of LayerNormlization op\n";
+         out << SP << "{\n";
+         out << SP << SP << "float* data = TMVA::Experimental::SOFIE::UTILITY::UnidirectionalBroadcast<float>(tensor_";
+         out << fNB << ", " << ConvertShapeToString(fShapeB) << ", " << ConvertShapeToString(fShapeX) << ");\n";
+         out << SP << "std::copy(data, data + " << fLength << ", tensor_" << fNBroadcastedB << ");\n";
+         out << SP << "delete[] data;\n";
+         out << SP << "}\n";
+      }
+    return out.str();
   }
 
   std::string Generate(std::string OpName) override {
@@ -148,6 +178,14 @@ public:
     std::string normalizedIndex = "axis_" + std::to_string(fAxis) + " * " + std::to_string(normalizedStrides[0]);
     for (size_t i = fAxis + 1; i < fSize; i++) {
       normalizedIndex += " + axis_" + std::to_string(i) + " * " + std::to_string(normalizedStrides[i - fAxis]);
+    }
+
+    if (!fNCastedX.empty()) {
+         // Cast X to float
+         out << SP << "for (size_t i = 0; i < " << fLength << "; i++) {\n";
+         out << SP << SP << "tensor_" << fNCastedX << "[i] = " << "static_cast<float>(tensor_" << fNX;
+         out << "[i]);\n";
+         out << SP << "}\n";
     }
 
     out << SP << "// Compute the mean\n";
@@ -201,7 +239,49 @@ public:
       out << SP << "}\n";
     }
 
-    out << SP << "// Y = Scale o NormalizedInput + B = Scale o InvStdDev (X - Mean) + B\n";
+   if (!fNCastedX.empty()) {
+      out << "// NormalizedX = InvStdDev * (CastedX - Mean)\n";
+      for (size_t i = 0; i < fAxis; i++) {
+         std::string iIdx = "axis_" + std::to_string(i);
+         out << SP << "for (size_t " << iIdx << " = 0; " << iIdx << " < " << inputShape;
+         out << "[" << i << "]; " << iIdx << "++){\n";
+      }
+         for (size_t j = fAxis; j < fSize; j++) {
+            std::string jIdx = "axis_" + std::to_string(j);
+            out << SP << SP << "for (size_t " << jIdx << " = 0; " << jIdx << " < " << inputShape;
+            out << "[" << j << "]; " << jIdx << "++){\n";
+         }
+         out << SP << SP << SP << "tensor_" << fNNormalizedX << "[" << InputIndex << "] = tensor_";
+         out << fNInvStdDev << "[" << axesIndex << "] * (tensor_" << fNCastedX << "[" << InputIndex;
+         out << "] - tensor_" << fNMean << "[" << axesIndex << "])\n";
+         for (size_t j = fAxis; j < fSize; j++) {
+            out << SP << SP << "}\n";
+         }
+      for (size_t i = fAxis; i < fSize; i++) {
+         out << SP << "}\n";
+      }
+      out << "// Y = Scale o NormalizedX";
+      for (size_t i = 0; i < fAxis; i++) {
+         std::string iIdx = "axis_" + std::to_string(i);
+         out << SP << "for (size_t " << iIdx << " = 0; " << iIdx << " < " << inputShape;
+         out << "[" << i << "]; " << iIdx << "++){\n";
+      }
+         for (size_t j = fAxis; j < fSize; j++) {
+            std::string jIdx = "axis_" + std::to_string(j);
+            out << SP << SP << "for (size_t " << jIdx << " = 0; " << jIdx << " < " << inputShape;
+            out << "[" << j << "]; " << jIdx << "++){\n";
+         }
+      out << SP << SP << SP << "tensor_" << fNY<< "[" << InputIndex << "] = tensor_" << fNScale;
+      out << "[" << axesIndex << "] * static_cast<" << fType << ">(tensor_" << fNCastedX << "[" << InputIndex;
+      out << "]);\n";
+      for (size_t j = fAxis; j < fSize; j++) {
+         out << SP << SP << "}\n";
+      }
+      for (size_t i = fAxis; i < fSize; i++) {
+         out << SP << "}\n";
+      }
+   } else {
+    out << SP << "// Y = Scale o InvStdDev (X - Mean)\n";
     // loop over all the dims in [0, fAxis)
     for (size_t i = 0; i < fAxis; i++) {
       std::string iIdx = "axis_" + std::to_string(i);
@@ -216,16 +296,29 @@ public:
     out << SP << SP << SP << "tensor_" << fNY << "[" << InputIndex << "] = tensor_" << fNScale;
     out << "[" << normalizedIndex << "] * tensor_" << fNInvStdDev << "[" << axesIndex;
     out << "] * (tensor_" << fNX << "[" << InputIndex << "] - tensor_" << fNMean << "[";
-    out << axesIndex << "]) + tensor_" << fNB << "[" << normalizedIndex << "];\n";
+    out << axesIndex << "]);\n";
     for (size_t j = fAxis; j < fSize; j++) {
       out << SP << SP << "}\n";
     }
     for (size_t i = fAxis; i < fSize; i++) {
       out << SP << "}\n";
     }
+   }
+
+   if (!fNB.empty()) {
+      std::string Bias = "tensor_" + (fNBroadcastedB.empty()? fNB : fNBroadcastedB);
+      out << SP << "// Add the bias to Y\n";
+      out << SP << "int " << OpName << "_n = " << fLength << ";\n";
+      out << SP << "float " << OpName << "_alpha = 1.;\n";
+      out << SP << "int " << OpName << "_inc = 1;\n";
+      out << SP << "BLAS::saxpy_(&" << OpName << "_n, &" << OpName << "_alpha, " << Bias << ", &";
+      out << OpName << "_inc, " << "tensor_" << fNY << ", &" << OpName << "_inc);\n";
+   }
 
     return out.str();
   }
+
+   std::vector<std::string> GetBlasRoutines() override { return {"Axpy"};}
 
   std::vector<std::string> GetStdLibs() override { return {"cmath"}; }
 };
