@@ -23,10 +23,12 @@ def test_nary(name):
 
     y = np.array([opfn(name, _a, _b,_c) for (_a,_b,_c) in zip(a_b.flatten(), b_b.flatten(), c_b.flatten())])
 
-    print("a = ", a.flatten())
-    print("b = ", b.flatten())
-    print("c = ", c.flatten())
-    print(f"{name}(a,b,c) = {y}\n")
+    #print("a = ", a.flatten())
+    #print("b = ", b.flatten())
+    #print("output = ", c.flatten())
+    print(f"{name}(a,b,c) = \n[")
+    print(*y, sep = ', ')
+    print(']\n')
 
 test_nary("Max")
 test_nary("Min")

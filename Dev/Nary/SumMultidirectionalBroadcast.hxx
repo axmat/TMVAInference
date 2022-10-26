@@ -1,4 +1,4 @@
-//Code generated automatically by TMVA for Inference of Model file [SumMultidirectionalBroadcast.onnx] at [Tue Oct 18 13:39:52 2022] 
+//Code generated automatically by TMVA for Inference of Model file [SumMultidirectionalBroadcast.onnx] at [Wed Oct 26 12:46:05 2022] 
 
 #ifndef TMVA_SOFIE_SUMMULTIDIRECTIONALBROADCAST
 #define TMVA_SOFIE_SUMMULTIDIRECTIONALBROADCAST
@@ -46,9 +46,7 @@ std::vector<float> infer(float* tensor_B,float* tensor_C,float* tensor_A){
          delete[] data;
       }
    for (size_t id = 0; id < 24; id++) {
-		tensor_Y[id] = tensor_BroadcastedA[id];
-		tensor_Y[id] = std::max(tensor_Y[id], tensor_BroadcastedB[id]);
-		tensor_Y[id] = std::max(tensor_Y[id], tensor_BroadcastedC[id]);
+		tensor_Y[id] = tensor_BroadcastedA[id] + tensor_BroadcastedB[id] + tensor_BroadcastedC[id];
    }
    std::vector<float> ret (tensor_Y, tensor_Y + 24);
    return ret;

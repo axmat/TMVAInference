@@ -17,7 +17,7 @@ def gen_model(op):
     #tensor_C = helper.make_tensor('C', TensorProto.FLOAT, [1, 4],
     #    [-0.41468981, -0.46591926,  0.56172534,  0.05616931])
 
-    node = helper.make_node('Max', ['A', 'B', 'C'], ['Y'])
+    node = helper.make_node(op, ['A', 'B', 'C'], ['Y'])
 
     graph = onnx.helper.make_graph([node], op, [A, B, C], [Y])
     #, [tensor_A, tensor_B, tensor_C])
