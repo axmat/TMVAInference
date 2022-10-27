@@ -1,5 +1,5 @@
-#ifndef TMVA_SOFIE_ROPERATOR_CONVTRANSPOSE_I
-#define TMVA_SOFIE_ROPERATOR_CONVTRANSPOSE_I
+#ifndef ROPERATOR_CONVTRANSPOSE_I
+#define ROPERATOR_CONVTRANSPOSE_I
 
 #include <memory>
 #include <sstream>
@@ -172,7 +172,8 @@ void ConvTransposeOp<T>::Initialize(RModel &model)
          throw std::runtime_error("TMVA SOFIE Conv op Input Tensor " + fNB + " is not found in model");
       }
       fShapeB = model.GetTensorShape(fNB);
-      bool broadcast_needed = (fShapeB.size() != fShapeY.size());
+		std::vector<size_t> shape(fShapeY.begin() + 1, fShapeY.end());
+      bool broadcast_needed = !UTILITY::AreSameShape(fShapeB, shape);
       // Broadcast the bias B
       if (broadcast_needed) {
          auto original_data = model.GetInitializedTensorData(fNB);
@@ -188,19 +189,19 @@ void ConvTransposeOp<T>::Initialize(RModel &model)
             throw std::runtime_error("TMVA SOFIE Conv op: Broadcasting for non-float type tensors is not supported");
          // here the acual broadcasting
          if (!fUseSession) {
-            // Broadcast B from M to N x M x Od x Oh x Ow
+            // Broadcast B from M to M x Od x Oh x Ow
             std::shared_ptr<void> new_data_ptr(
-               UTILITY::BroadcastConvBias<float>(static_cast<float *>(original_data.get()), fShapeB[0], fShapeY),
+               UTILITY::BroadcastConvBias<float>(static_cast<float *>(original_data.get()), fShapeB[0], shape),
                std::default_delete<float[]>());
 
-            model.UpdateInitializedTensor(fNB, model.GetTensorType(fNB), fShapeY, new_data_ptr);
+            model.UpdateInitializedTensor(fNB, model.GetTensorType(fNB), shape, new_data_ptr);
             fShapeB = model.GetTensorShape(fNB);
             fNBroadcastedB = fNB; // use same name
          } else {
             // In case of session add broadcasting code in Session constructor and in GenerateInitCode
             // we need to add a new intermediate tensor for broadcasted bias tensor
             fNBroadcastedB = "Broadcasted" + fNB;
-            model.AddIntermediateTensor(fNBroadcastedB, model.GetTensorType(fNB), fShapeY);
+            model.AddIntermediateTensor(fNBroadcastedB, model.GetTensorType(fNB), shape);
          }
       }
    }
@@ -211,12 +212,15 @@ std::string ConvTransposeOp<T>::GenerateInitCode()
 {
    std::stringstream out;
    // generate initialization code for broadcasting of bias tensor
-   if (fShapeB.size() != fShapeY.size() && !fNBroadcastedB.empty()) {
+   if (!fNBroadcastedB.empty()) {
          // include a separate scope to avoid defining unique operator temp variables
+			std::vector<size_t> targetShape(fShapeY.begin() + 1, fShapeY.end());
+			std::vector<size_t> shape(fDim + 1, 1);
+			shape[0] = fShapeB[0];
          out << SP << "{\n";
-         out << SP << SP << "float * data = TMVA::Experimental::SOFIE::UTILITY::BroadcastConvBias<float>(tensor_"
-             << fNB << ", " << fShapeB[0] << ", " << ConvertShapeToString(fShapeY) << ");\n";
-         out << SP << SP << "std::copy(data, data + " << ConvertShapeToLength(fShapeY) << ", tensor_" << fNBroadcastedB << ");\n";
+         out << SP << SP << "float * data = TMVA::Experimental::SOFIE::UTILITY::UnidirectionalBroadcast<float>(tensor_"
+             << fNB << ", " << ConvertShapeToString(shape) << ", " << ConvertShapeToString(targetShape) << ");\n";
+         out << SP << SP << "std::copy(data, data + " << ConvertShapeToLength(targetShape) << ", tensor_" << fNBroadcastedB << ");\n";
          out << SP << SP << "delete[] data;\n";
          out << SP << "}\n";
    }
@@ -268,7 +272,6 @@ std::string ConvTransposeOp<T>::Generate(std::string OpName)
 	std::cout << "Output shape" << std::endl;
 	std::cout << fShapeY[0] << " x " << fShapeY[1] << " x " << oDepth << " x " << oHeight;
 	std::cout << " x " << oWidth << std::endl;
-
 
    out << "\n//----  operator ConvTranspose " << OpName << "\n";
 
@@ -340,29 +343,7 @@ std::string ConvTransposeOp<T>::Generate(std::string OpName)
 	//
 	// For 1d convtranspose F is a toeplitz matrix
 	// 
-	// Convtranspose 2d its a block diagonal toeplitz matrix of size CxDxHxW * MxODxOHxOW
-	// If the input is a 2d Matrix of shape 1x2x2x2
-	// The first channel is
-	// [x0 x1] [x4 x5]
-	// [x2 x3] [x6 x7]
-	//
-	// and the kernel matrix W of shape 1x2x2x2
-	// [k0 k1] [k4 k5]
-	// [k2 k3] [k6 k7]
-	//
-	// then the matrix F of shape 8x18 is
-	// [k0 k1 0  k2 k3 0  0  0 ] [                       ]
-	// [0  k0 k1 0  k2 k3 0  0 ] [                       ]
-	// [0  0  k0 k1 0  k2 k3 0 ] [                       ]
-	// [0  0  0  k0 k1 0  k2 k3] [                       ]
-	//
-	// [                       ] [k4 k5 0  k6 k7 0  0  0 ]
-	// [                       ] [0  k4 k5 0  k6 k7 0  0 ]
-	// [                       ] [0  0  k4 k5 0  k6 k7 0 ]
-	// [                       ] [0  0  0  k4 k5 0  k6 k7]
-	//
-	// [k0 k1 0 k2 k3] is VecW
-	//
+	// Convtranspose 2d its an overlapped block diagonal toeplitz matrix of size CxDxHxW * MxODxOHxOW
 	// The output vec(Y) = vec(X) x F (vector-matrix multiplication)
 	std::string F = "tensor_" + fNF;
 	size_t fRows = fShapeF[0];
@@ -394,44 +375,33 @@ std::string ConvTransposeOp<T>::Generate(std::string OpName)
 	} else if (fDim == 2) {
 		// Matrix of shape [HxW, OHxOW] starting at [row = c * icStride, col = m * ocStride]
 		// Matrix of shape [W, OW] starting at indices [row + ]
- 		out << SP << SP << SP << SP << SP << "size_t offset = row * " << fCols << " + col;\n";
-		out << SP << SP << SP << SP << SP << "for (size_t h = 0; h < " << iHeight << "; h++) {\n";
-		//out << SP << SP << SP << SP << SP << SP << "for (size_t kh = 0; kh < " << kHeight << "; kh++) {\n";
-		//out << " + h * " << iWidth * fCols << " + (kh - h) * " << oWidth << ";\n";
-		out << "size_t idx = offset + h * " << iWidth * fCols << " + h * " << oWidth << ";\n";
-		//out << "size_t k_offset = c * " << kcStride << " + m * " << kmStride << " + kh * " << khStride << ";\n";
-		//out << "std::copy(" Kernel 
-		out << "for (size_t w = 0; w < " << iWidth << "; w++) {\n";
-		out << SP << "for (size_t kh = 0; kh < " << kHeight << "; kh++) {\n";
+ 		out << SP << SP << SP << SP << "size_t offset = row * " << fCols << " + col;\n";
+		out << SP << SP << SP << SP << "for (size_t h = 0; h < " << iHeight << "; h++) {\n";
+		out << SP << SP << SP << SP << SP << "size_t idx = offset + h * " << iWidth * fCols << " + h * " << oWidth << ";\n";
+		out << SP << SP << SP << SP << SP << "for (size_t w = 0; w < " << iWidth << "; w++) {\n";
+		out << SP << SP << SP << SP << SP << SP << "for (size_t kh = 0; kh < " << kHeight << "; kh++) {\n";
 		// Where we should copy the kernel row matrix of size [kWidth]
-		out << "size_t f_idx = idx + w * " << fCols << " + w + kh * " << oWidth << ";\n";
-		//out << F << "[f_idx] = kh + 1;\n";
-		out << "size_t k_offset = c * " << kcStride << " + m * " << kmStride << " + kh * " << khStride << ";\n";
-		out << "std::copy(" << Kernel << " + k_offset, " << Kernel << " + k_offset + " << kWidth << ", " << F << " + f_idx);\n";
-		out << SP << "}\n";
-		out << "}\n";
-		//out << F << "[idx] = 9.;\n";
-		//out << SP << SP << SP << SP << SP << SP << "}\n";
+		out << SP << SP << SP << SP << SP << SP << SP << "size_t f_idx = idx + w * " << fCols << " + w + kh * " << oWidth << ";\n";
+		out << SP << SP << SP << SP << SP << SP << SP << "size_t k_offset = c * " << kcStride << " + m * " << kmStride << " + kh * " << khStride << ";\n";
+		out << SP << SP << SP << SP << SP << SP << SP << "std::copy(" << Kernel << " + k_offset, " << Kernel << " + k_offset + " << kWidth << ", " << F << " + f_idx);\n";
+		out << SP << SP << SP << SP << SP << SP << "}\n";
 		out << SP << SP << SP << SP << SP << "}\n";
+		out << SP << SP << SP << SP << "}\n";
 	} else if (fDim == 3) {
 		// TODO Fill the matrix F
 	}
-	//out << SP << SP << SP << F << "[i * " << fCols << " + j] = 1.;\n";
 	out << SP << SP << "}\n";
 	out << SP << "}\n";
 
-	/*out << SP << "std::cout << \" Transposed (dilated) kernel matrix \" << std::endl;\n";
+	/*
+	out << SP << "std::cout << \" Transposed (dilated) kernel matrix \" << std::endl;\n";
 	out << SP << "for (size_t i = 0; i < " << fRows << "; i++) {\n";
 	out << SP << SP << "for (size_t j = 0; j < " << fCols << "; j++) {\n";
 	out << SP << SP << " std::cout << " << F << "[i * " << fCols << " + j] << \" \";";
 	out << SP << SP << "}\n";
 	out << SP << SP << "std::cout << std::endl;\n";
-	out << SP << "}\n";*/
-
-	//std::cout << "]\n\n";
-	// Input of shape N x C x H x W
-	// n * CHW + c * hw
-	//
+	out << SP << "}\n";
+	*/
 
 	std::cout << "Input of ConvTranspose op = " << Input << std::endl;
 
@@ -443,37 +413,31 @@ std::string ConvTransposeOp<T>::Generate(std::string OpName)
 
    // Loop on batch size
    out << SP << "for (size_t n = 0; n < " << bsize << "; n++) {\n";
-	// Set t(Y) = t(F) * t(X)
+	// Set Y = F * t(X)
    if (fDim <= 2) {
-		out << SP << "char " << OpName << "_transA = 'N';\n";
-		out << SP << "char " << OpName << "_transB = 'T';\n";
-		// [m, k] * [k, n]
-		out << SP << "int " << OpName << "_m = " << fCols << ";\n";
-		out << SP << "int " << OpName << "_k = " << fRows << ";\n";
-		out << SP << "int " << OpName << "_n = 1;\n";
-		out << SP << "float " << OpName << "_alpha = 1.0;\n";
-		out << SP << "float " << OpName << "_beta = 0.0;\n";
+		out << SP << SP << "char " << OpName << "_transA = 'N';\n";
+		// [m, n] * [n, 1]
+		out << SP << SP << "int " << OpName << "_m = " << fCols << ";\n";
+		out << SP << SP << "int " << OpName << "_n = " << fRows << ";\n";
+		out << SP << SP << "int " << OpName << "_inc = 1;\n";
+		out << SP << SP << "float " << OpName << "_alpha = 1.0;\n";
+		out << SP << SP << "float " << OpName << "_beta = 0.0;\n";
       out << SP << SP << "size_t in_offset = n * " << iChannel * icStride << ";\n";
       out << SP << SP << "size_t out_offset = n * " << oChannel * ocStride << ";\n";
       // Call BLAS
-      out << SP << SP << "BLAS::sgemm_(&" << OpName << "_transA, &" << OpName << "_transB, &" << OpName;
-		out << "_m, &" << OpName << "_n, &" << OpName << "_k, &" << OpName << "_alpha, ";
-		out << F << ", &" << OpName << "_m,\n";
-      out << SP << SP << SP << Input << " + in_offset, &" << OpName << "_n, &" << OpName << "_beta, tensor_" << fNY
-          << " + out_offset, &" << OpName << "_m);\n";
+		out << SP << SP << "BLAS::sgemv_(&" << OpName << "_transA, &" << OpName << "_m, &" << OpName << "_n, &";
+		out << OpName << "_alpha, " << F << ", &" << OpName << "_m," << Input << " + in_offset, &";
+		out << OpName << "_inc, &" << OpName << "_beta, tensor_" << fNY << " + out_offset, &" << OpName << "_inc);\n";
+
+   	if (fNBroadcastedB != "") {
+      out << SP << SP << "int " << OpName << "_size = " << oChannel * oDepth * oHeight * oWidth << ";\n";
+      out << SP << SP << "float " << OpName << "_gamma = 1.0;\n";
+      out << SP << SP << "BLAS::saxpy_(&" << OpName << "_size, &" << OpName << "_gamma, tensor_" << fNBroadcastedB << ", &"
+          << OpName << "_inc, tensor_" << fNY << " + out_offset, &" << OpName << "_inc);\n";
+   	}
 	}
 
 	out << SP << "}\n"; // end n loop
-
-   if (fNBroadcastedB != "") {
-      out << SP << "int " << OpName << "_size = " << fShapeY[0] * fShapeY[1] * oDepth * oHeight * oWidth << ";\n";
-      out << SP << "float " << OpName << "_gamma = 1.0;\n";
-      out << SP << "int " << OpName << "_incx = 1;\n";
-      out << SP << "int " << OpName << "_incy = 1;\n";
-
-      out << SP << "BLAS::saxpy_(&" << OpName << "_size, &" << OpName << "_gamma, tensor_" << fNBroadcastedB << ", &"
-          << OpName << "_incx, tensor_" << fNY << ", &" << OpName << "_incy);\n";
-   }
 
    return out.str();
 }

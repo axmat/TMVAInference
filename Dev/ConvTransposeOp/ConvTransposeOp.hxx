@@ -1,5 +1,5 @@
-#ifndef TMVA_SOFIE_ROPERATOR_CONVTRANSPOSE_HXX
-#define TMVA_SOFIE_ROPERATOR_CONVTRANSPOSE_HXX
+#ifndef ROPERATOR_CONVTRANSPOSE_HXX
+#define ROPERATOR_CONVTRANSPOSE_HXX
 
 #include <TMVA/SOFIE_common.hxx>
 #include <TMVA/ROperator.hxx>
@@ -125,6 +125,8 @@ public:
     * \param opName name of the operator
     */
    std::string Generate(std::string opName) override;
+
+   std::vector<std::string> GetBlasRoutines() override { return {"Gemv"};}
 };
 
 } // namespace SOFIE
